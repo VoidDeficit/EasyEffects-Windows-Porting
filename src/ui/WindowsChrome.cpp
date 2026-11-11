@@ -46,7 +46,7 @@ void styleTopLevelWindow(juce::Component& content)
     auto* top = content.getTopLevelComponent();
     auto* window = dynamic_cast<juce::DocumentWindow*>(top);
     if (window == nullptr || window == &content)
-        return;   // plug-in hosted in a DAW / OBS: the host owns the window
+        return;   // not inside a top-level document window
 
     window->setColour(juce::DocumentWindow::backgroundColourId, theme::windowBg);
     window->setBackgroundColour(theme::windowBg);

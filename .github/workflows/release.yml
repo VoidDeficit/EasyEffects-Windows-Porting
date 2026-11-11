@@ -2,7 +2,7 @@
 #
 #   1. Bump the version in VERSION (e.g. 0.2.0 -> 0.3.0) and push it to the
 #      default branch (master).
-#   2. This workflow builds the app and the VST3, packages
+#   2. This workflow builds the app, packages
 #        EasyEffects-Windows-vX.Y.Z-Portable.zip  (portable, no install)
 #        EasyEffects-Windows-vX.Y.Z-Setup.exe     (installer, updates itself)
 #      and publishes them as release vX.Y.Z with generated release notes.
@@ -56,8 +56,8 @@ jobs:
       - name: Configure
         run: cmake -B build -G "Visual Studio 17 2022" -A x64 "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" "-DEE_UPDATE_REPO=${{ github.repository }}"
 
-      - name: Build app and VST3
-        run: cmake --build build --config Release --target EasyEffects_Standalone EasyEffects_VST3 --parallel
+      - name: Build app
+        run: cmake --build build --config Release --target EasyEffects_Standalone --parallel
 
       - name: Package portable zip
         shell: pwsh

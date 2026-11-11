@@ -1241,7 +1241,7 @@ juce::String EasyEffectsAudioProcessorEditor::inputNameFor(Pipeline p) const
         auto name = dm->getAudioDeviceSetup().inputDeviceName;
         return name.isNotEmpty() ? name : juce::String("None");
     }
-    return "Host input";
+    return "None";
 }
 
 juce::String EasyEffectsAudioProcessorEditor::outputNameFor(Pipeline p) const
@@ -1252,7 +1252,7 @@ juce::String EasyEffectsAudioProcessorEditor::outputNameFor(Pipeline p) const
         auto name = dm->getAudioDeviceSetup().outputDeviceName;
         return name.isNotEmpty() ? name : juce::String("None");
     }
-    return "Host output";
+    return "None";
 }
 
 juce::String EasyEffectsAudioProcessorEditor::engineStatus() const
@@ -1276,10 +1276,8 @@ juce::String EasyEffectsAudioProcessorEditor::engineStatus() const
             s << " (not running)";
         if (driverNeedsElevation(asioDriver) && !isElevatedCached())
             s << middleDot() << "not administrator: virtual devices unavailable";
-    } else if (juce::JUCEApplicationBase::isStandaloneApp()) {
-        s << "Windows Audio";
     } else {
-        s << "Plug-in";
+        s << "Windows Audio";
     }
 
     if (isMonitoring)
@@ -1291,7 +1289,7 @@ juce::String EasyEffectsAudioProcessorEditor::pageSubtitle() const
 {
     juce::String what;
     if (!hasPipelineTabs())
-        what = juce::JUCEApplicationBase::isStandaloneApp() ? "Your audio" : "Audio from the host";
+        what = "Your audio";
     else
         what = activePipeline == Pipeline::Output ? "System audio: what your apps play" : "Your microphone";
     return what + middleDot() + engineStatus();

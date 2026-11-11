@@ -31,7 +31,6 @@ New-Item -ItemType Directory -Force -Path $ReleaseContentDir | Out-Null
 
 # 2. Define source paths
 $ExeSource = Join-Path $RootDir "build\EasyEffects_artefacts\Release\Standalone\EasyEffects.exe"
-$Vst3Source = Join-Path $RootDir "build\EasyEffects_artefacts\Release\VST3\EasyEffects.vst3"
 $QuickStart = Join-Path $RootDir "QUICK_START.md"
 $License = Join-Path $RootDir "LICENSE"
 
@@ -41,16 +40,9 @@ if (-not (Test-Path $ExeSource)) {
     exit 1
 }
 
-if (-not (Test-Path $Vst3Source)) {
-    Write-Warning "VST3 plugin not found at $Vst3Source. It will be skipped."
-}
-
 # 4. Copy files to release dir
 Write-Host "Copying files to $ReleaseContentDir..."
 Copy-Item $ExeSource -Destination $ReleaseContentDir
-if (Test-Path $Vst3Source) {
-    Copy-Item -Recurse $Vst3Source -Destination $ReleaseContentDir
-}
 Copy-Item $QuickStart -Destination $ReleaseContentDir
 Copy-Item $License -Destination $ReleaseContentDir
 

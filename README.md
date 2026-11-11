@@ -26,7 +26,7 @@ A real-time, modular DSP audio processing chain for Windows, built with C++ and 
 - **25+ Professional Effects:** Including 10-Band Parametric EQ, Compressor, RNNoise (AI Noise Reduction), Pitch Shifter, Exciter, Limiter, and more.
 - **Advanced Analytics:** Real-time 2048-point lock-free FFT Spectrum Analyzer and dynamic I/O metering.
 - **Preset System:** Save and load full chain configurations or per-module presets (JSON based).
-- **Standalone & VST3:** Run as a standalone desktop app or load it as a VST3 plugin in OBS Studio or your favorite DAW.
+- **Windows app:** Lives in the notification area and installs its own updates. (The VST3 plug-in was dropped after version 0.2.3.)
 
 ---
 
@@ -36,7 +36,7 @@ Every release on the [Releases](../../releases) page has two downloads:
 
 | File | What it is |
 |---|---|
-| `EasyEffects-Windows-vX.Y.Z-Setup.exe` | **Installer (recommended).** Installs the app (and optionally the VST3), updates itself unattended (no questions, no installer window; it restarts by itself), and runs with administrator rights without a UAC prompt each time (needed for Virtual Audio). It can also start EasyEffects when you sign in. |
+| `EasyEffects-Windows-vX.Y.Z-Setup.exe` | **Installer (recommended).** Installs the app, updates itself unattended (no questions, no installer window; it restarts by itself), and runs with administrator rights without a UAC prompt each time (needed for Virtual Audio). It can also start EasyEffects when you sign in. |
 | `EasyEffects-Windows-vX.Y.Z-Portable.zip` | **Portable.** Extract anywhere and run `EasyEffects.exe`. It tells you about new versions but does not update itself. |
 
 EasyEffects lives in the notification area (system tray): closing or minimizing the window keeps
@@ -53,7 +53,7 @@ Uninstalling removes both tasks.
 
 Releases are built by GitHub Actions ([release.yml](.github/workflows/release.yml)). To publish one,
 bump the version in [`VERSION`](VERSION) (for example `0.2.0` to `0.3.0`) and push it to `master`.
-The workflow builds the app and the VST3, creates the portable zip and the installer, and publishes
+The workflow builds the app, creates the portable zip and the installer, and publishes
 release `vX.Y.Z` with generated release notes. On other branches it only builds and attaches the files
 to the workflow run.
 
@@ -109,14 +109,6 @@ drift, so the two sides stay in sync without growing latency.
 
 ---
 
-## VST3 Installation (For OBS / DAWs)
-
-1. From the release zip, copy the `EasyEffects.vst3` folder.
-2. Paste it into your system's VST3 directory:
-   `C:\Program Files\Common Files\VST3\`
-3. Restart OBS Studio or your DAW, and EasyEffects will appear in your plugins list.
-
----
 
 ## Build from Source
 

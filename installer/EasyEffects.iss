@@ -56,24 +56,19 @@ VersionInfoVersion={#AppVersion}
 SetupIconFile={#IconFile}
 #endif
 
-[Types]
-Name: "full"; Description: "Full installation"
-Name: "custom"; Description: "Custom installation"; Flags: iscustom
-
-[Components]
-Name: "app";  Description: "EasyEffects (standalone app)"; Types: full custom; Flags: fixed
-Name: "vst3"; Description: "VST3 plug-in (for OBS Studio and DAWs)"; Types: full
-
 [Tasks]
 Name: "autostart";   Description: "Start EasyEffects automatically when I sign in (with administrator rights)"; GroupDescription: "Startup:"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "{#BuildDir}\Standalone\EasyEffects.exe"; DestDir: "{app}"; Components: app; Flags: ignoreversion
-Source: "{#RootDir}\installer\tasks.ps1";        DestDir: "{app}"; Components: app; Flags: ignoreversion
-Source: "{#RootDir}\QUICK_START.md";             DestDir: "{app}"; Components: app; Flags: ignoreversion
-Source: "{#RootDir}\LICENSE";                    DestDir: "{app}"; Components: app; Flags: ignoreversion
-Source: "{#BuildDir}\VST3\EasyEffects.vst3\*";   DestDir: "{commoncf64}\VST3\EasyEffects.vst3"; Components: vst3; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#BuildDir}\Standalone\EasyEffects.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RootDir}\installer\tasks.ps1";        DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RootDir}\QUICK_START.md";             DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RootDir}\LICENSE";                    DestDir: "{app}"; Flags: ignoreversion
+
+[InstallDelete]
+; The VST3 plug-in was dropped after 0.2.3; remove a copy installed by an older version.
+Type: filesandordirs; Name: "{commoncf64}\VST3\EasyEffects.vst3"
 
 [INI]
 Filename: "{app}\install.ini"; Section: "Install"; Key: "Channel"; String: "installer"

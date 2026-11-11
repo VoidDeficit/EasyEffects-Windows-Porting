@@ -51,15 +51,6 @@ run on separate clocks) in sync.
 
 ---
 
-## Using as a VST3 Plugin
-
-You can also use EasyEffects inside OBS Studio or DAWs!
-
-1. Copy the `EasyEffects.vst3` folder included in this zip.
-2. Paste it into: `C:\Program Files\Common Files\VST3\`
-3. It will now appear as an effect in OBS and standard DAWs.
-
----
 
 ## Legal & Licensing
 

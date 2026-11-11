@@ -37,11 +37,10 @@ juce_add_plugin(EasyEffects
     COPY_PLUGIN_AFTER_BUILD FALSE
     PLUGIN_MANUFACTURER_CODE Wwmm
     PLUGIN_CODE Eeff
-    FORMATS Standalone VST3
+    FORMATS Standalone
     PRODUCT_NAME "EasyEffects"
     VERSION ${EE_VERSION}
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.png"
-    VST3_CAN_REPLACE_VST2 FALSE
 )
 
 # Add source files
@@ -115,7 +114,6 @@ target_link_libraries(EasyEffects
 target_include_directories(EasyEffects PRIVATE src)
 
 # Add compile definitions
-target_compile_definitions(EasyEffects PUBLIC JUCE_VST3_CAN_REPLACE_VST2=0)
 target_compile_definitions(EasyEffects PRIVATE EE_UPDATE_REPO="${EE_UPDATE_REPO}")
 
 # Our own standalone application class (src/app/StandaloneApp.cpp): tray icon,
