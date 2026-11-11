@@ -18,27 +18,14 @@ Use the left sidebar to add effects like EQ, Compressor, or Noise Reduction.
 
 ---
 
-## Built-in Virtual Audio (no VB-Cable needed)
+## Virtual Audio (system audio + microphone)
 
-1. Double-click **`EEVirtualAudioSetup.exe`** and allow the administrator prompt.
-   You can also open EasyEffects and choose **Virtual Audio → Install virtual audio driver...**.
-2. In EasyEffects, click **Virtual Audio** (top right):
-   - **Process system audio**: all Windows audio goes through EasyEffects to your speakers or headphones.
-   - **Process microphone**: select **EasyEffects Microphone** in Discord, Zoom or OBS. It is also set as the Windows default input.
-3. **Off**, or closing EasyEffects, restores your normal Windows devices.
-
----
-
-## Microphone Audio Setup with VB-Cable (Voice Processing)
-
-To apply effects to your microphone before sending it to Discord, Zoom, or OBS:
-
-1. **Install a Virtual Audio Cable:** We recommend [VB-Cable (Free)](https://vb-audio.com/Cable/).
-2. **In EasyEffects Audio Settings:**
-   - Set **Input** to your physical microphone.
-   - Set **Output** to `CABLE Input`.
-3. **In your chat application:**
-   - Set your input/microphone device to `CABLE Output`.
+1. Install [Synchronous Audio Router](https://github.com/eiz/SynchronousAudioRouter/releases) once (free). No setup inside it is needed.
+2. In EasyEffects, click **Virtual Audio** (top right) and turn on:
+   - **Process system audio**: all Windows audio goes through the **Output** tab to your speakers or headphones.
+   - **Process microphone**: your mic goes through the **Input** tab to **EasyEffects Microphone**. Pick it in Discord, Zoom or OBS (it also becomes the Windows default input).
+3. Allow the **Restart as administrator** prompt. SAR only creates Windows devices for an administrator host.
+4. Turning an option off, or closing EasyEffects, restores your normal Windows devices.
 
 ---
 
@@ -61,20 +48,6 @@ custom driver) and mix Windows Audio with ASIO channel pairs:
 
 Resampling and FIFOs keep the Windows Audio devices and the ASIO driver (which
 run on separate clocks) in sync.
-
----
-
-## System-Wide Audio Routing (Optional)
-
-By default, EasyEffects Windows only processes the direct input you select. It **does not** automatically capture all system audio (like games or Spotify) out-of-the-box.
-
-To apply effects to your entire system's output:
-
-1. **Install a Virtual Audio Cable:** We recommend [VB-Cable (Free)](https://vb-audio.com/Cable/).
-2. **Set Windows Default Output** to `CABLE Input`.
-3. **In EasyEffects Audio Settings:**
-   - Set **Input** to `CABLE Output`
-   - Set **Output** to your physical speakers/headphones.
 
 ---
 

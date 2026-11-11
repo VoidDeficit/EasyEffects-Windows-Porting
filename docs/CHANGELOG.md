@@ -1,5 +1,23 @@
 # Changelog - EasyEffects Windows
 
+## [Unreleased] - Virtual Audio through Synchronous Audio Router
+### Added
+- **Automatic Synchronous Audio Router setup**: EasyEffects writes SAR's configuration
+  (the interface's ASIO driver + **EasyEffects Speakers** / **EasyEffects Microphone**),
+  starts it, wires the Output and Input tabs to those devices and makes them the Windows
+  defaults (restored when turned off or on exit).
+- **Virtual Audio button** rebuilt on SAR: *Process system audio* and *Process microphone*
+  toggles, *Connect both tabs to the EasyEffects devices*, *Turn virtual audio off*.
+- **Restart as administrator** prompt (SAR only creates Windows devices for an elevated host).
+- Sample-rate fallback when an ASIO driver can't start at its reported rate; ASIO open/close
+  trace in `%APPDATA%\EasyEffects\asio.log`.
+
+### Removed
+- The custom PortCls virtual audio driver, its installer (`EEVirtualAudioSetup.exe`) and the
+  driver build/signing scripts. A self-built kernel driver can't load with Secure Boot on
+  without Microsoft signing; SAR provides the same devices. (Kept in git history.)
+- VB-Cable-specific code: CABLE auto-detection and the shared-cable warning.
+
 ## [Unreleased] - ASIO engine: Windows Audio on both sides
 ### Added
 - **Windows Audio microphone as ASIO input source**: The Input pipeline can now read the

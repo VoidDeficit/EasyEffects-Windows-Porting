@@ -76,7 +76,6 @@ target_sources(EasyEffects
     src/ui/ConvolverEditor.cpp
     src/ui/GenericModuleEditor.cpp
     src/PresetManager.cpp
-    src/audio/VirtualAudioRouter.cpp
     src/audio/WindowsAudioEndpoints.cpp
     src/audio/SecondaryPipeline.cpp
     src/audio/AsioHost.cpp

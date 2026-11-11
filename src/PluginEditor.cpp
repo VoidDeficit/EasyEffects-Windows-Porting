@@ -71,7 +71,7 @@ EasyEffectsAudioProcessorEditor::EasyEffectsAudioProcessorEditor(EasyEffectsAudi
     addEffectBtn.onClick = [this] { showAddEffectMenu(); };
     addAndMakeVisible(addEffectBtn);
 
-    // Virtual Audio button - routes through the built-in EasyEffects virtual devices
+    // Virtual Audio button - EasyEffects' own Windows devices via Synchronous Audio Router
 #if JucePlugin_Build_Standalone
     if (juce::JUCEApplicationBase::isStandaloneApp()) {
         addAndMakeVisible(virtualBtn);
@@ -83,8 +83,8 @@ EasyEffectsAudioProcessorEditor::EasyEffectsAudioProcessorEditor(EasyEffectsAudi
         juce::Component::SafePointer<EasyEffectsAudioProcessorEditor> safeThis(this);
         juce::MessageManager::callAsync([safeThis] {
             if (safeThis != nullptr) {
-                safeThis->initVirtualRouter();
                 safeThis->initPipelines();
+                safeThis->updateVirtualButton();
             }
         });
     }
@@ -137,9 +137,6 @@ EasyEffectsAudioProcessorEditor::~EasyEffectsAudioProcessorEditor()
     if (isMonitoring)
         toggleMonitor();
 
-    // Restores the user's Windows default devices (mode stays saved for next launch)
-    virtualRouter.reset();
-
     stopTimer();
     // Drop every UI object that points into a pipeline before the pipelines go.
     viewport.setViewedComponent(nullptr, false);
@@ -170,9 +167,7 @@ void EasyEffectsAudioProcessorEditor::initPipelines()
     if (holder == nullptr)
         return;
 
-    outputPipeline = std::make_unique<eeval::SecondaryPipeline>(
-        holder->settings.get(), "outputPipeline",
-        holder->deviceManager.getAudioDeviceSetup().outputDeviceName);
+    outputPipeline = std::make_unique<eeval::SecondaryPipeline>(holder->settings.get(), "outputPipeline");
 
     outputTab.setVisible(true);
     inputTab.setVisible(true);
@@ -224,7 +219,6 @@ void EasyEffectsAudioProcessorEditor::enableAsio(const juce::String& driver)
         props->setValue("asio.driver", driver);
 
     monitorBtn.setEnabled(false);
-    virtualBtn.setEnabled(false);
     monitorBtn.setTooltip("Not available with ASIO: route a pair to your monitor outputs instead");
 
     // Synchronous Audio Router: write its config (hardware + EasyEffects'
@@ -295,7 +289,7 @@ void EasyEffectsAudioProcessorEditor::enableAsio(const juce::String& driver)
                 "\n\nIf this is Synchronous Audio Router, open its control panel "
                 "(menu > ASIO control panel) and choose your audio interface (e.g. FLOW ASIO Driver) as the hardware.");
     }
-    repaint();
+    updateVirtualButton();
 #else
     juce::ignoreUnused(driver);
 #endif
@@ -368,15 +362,18 @@ void EasyEffectsAudioProcessorEditor::trySwitchWindowsDefaultsToSar()
         done = false;   // SAR hasn't created this device yet: try again on the next tick
     };
 
-    switchTo(Flow::Render,  eeval::sar::speakersEndpoint,   "sar.prevRenderId");
-    switchTo(Flow::Capture, eeval::sar::microphoneEndpoint, "sar.prevCaptureId");
+    // Only for the options switched on in the Virtual Audio menu.
+    if (virtualOptionEnabled(true))
+        switchTo(Flow::Render,  eeval::sar::speakersEndpoint,   "sar.prevRenderId");
+    if (virtualOptionEnabled(false))
+        switchTo(Flow::Capture, eeval::sar::microphoneEndpoint, "sar.prevCaptureId");
 
     if (done || --sarDefaultsCountdown <= 0)
         sarDefaultsCountdown = 0;
 #endif
 }
 
-void EasyEffectsAudioProcessorEditor::restoreWindowsDefaultsFromSar()
+void EasyEffectsAudioProcessorEditor::restoreWindowsDefaultsFromSar(bool render, bool capture)
 {
 #if JucePlugin_Build_Standalone
     auto* holder = juce::StandalonePluginHolder::getInstance();
@@ -393,8 +390,8 @@ void EasyEffectsAudioProcessorEditor::restoreWindowsDefaultsFromSar()
             setDefaultEndpoint(prev.toStdString());
         props->removeValue(prevKey);
     };
-    restore(Flow::Render,  eeval::sar::speakersEndpoint,   "sar.prevRenderId");
-    restore(Flow::Capture, eeval::sar::microphoneEndpoint, "sar.prevCaptureId");
+    if (render)  restore(Flow::Render,  eeval::sar::speakersEndpoint,   "sar.prevRenderId");
+    if (capture) restore(Flow::Capture, eeval::sar::microphoneEndpoint, "sar.prevCaptureId");
     if (auto* f = dynamic_cast<juce::PropertiesFile*>(props))
         f->saveIfNeeded();
 #endif
@@ -449,9 +446,8 @@ void EasyEffectsAudioProcessorEditor::disableAsio()
         outputPipeline->deviceManager().restartLastAudioDevice();
 
     monitorBtn.setEnabled(true);
-    virtualBtn.setEnabled(true);
     monitorBtn.setTooltip("Temporarily send the output to your monitor device");
-    repaint();
+    updateVirtualButton();
 #endif
 }
 
@@ -901,21 +897,7 @@ void EasyEffectsAudioProcessorEditor::paint(juce::Graphics& g)
     if (isMonitoring)
         status << "   " << dot << "   Monitoring: " << monitorDeviceName;
 
-    // Both pipelines through one VB-Cable = your mic plays in the Output pipeline.
-    bool sharedCable = false;
-#if JucePlugin_Build_Standalone
-    if (outputPipeline != nullptr && !asioEnabled())
-        if (auto* holder = juce::StandalonePluginHolder::getInstance())
-            sharedCable = eeval::SecondaryPipeline::sharesCableWith(
-                outputPipeline->deviceManager().getAudioDeviceSetup().inputDeviceName,
-                holder->deviceManager.getAudioDeviceSetup().outputDeviceName);
-#endif
-    if (sharedCable)
-        status = "Warning: both pipelines use the same VB-Cable, so your microphone also plays in Output. "
-                 "Change \"Players\" on the Output tab.";
-
-    g.setColour(sharedCable ? theme::accentWarning
-                            : (isMonitoring ? theme::accentSuccess : theme::textSecondary));
+    g.setColour(isMonitoring ? theme::accentSuccess : theme::textSecondary);
     g.setFont(juce::Font(juce::FontOptions(12.0f)));
     auto statusArea = footerArea.reduced(12, 0);
     statusArea.removeFromRight(presetNameLabel.getWidth() + 8);
@@ -1075,156 +1057,120 @@ void EasyEffectsAudioProcessorEditor::toggleMonitor()
 #endif
 }
 
-// --- Virtual Audio Routing ---
+// --- Virtual Audio (Synchronous Audio Router) ------------------------------
+//
+// The "Virtual Audio" button: EasyEffects' own Windows devices, provided by
+// Synchronous Audio Router (SAR) while EasyEffects hosts it.
+//   Process system audio  -> Windows default playback  = "EasyEffects Speakers"
+//   Process microphone    -> Windows default recording = "EasyEffects Microphone"
+// Turning an option off hands that default back to the user's previous device.
 
-void EasyEffectsAudioProcessorEditor::initVirtualRouter()
+bool EasyEffectsAudioProcessorEditor::virtualOptionEnabled(bool output) const
 {
 #if JucePlugin_Build_Standalone
-    if (virtualRouter != nullptr)
-        return;
-
-    auto* holder = juce::StandalonePluginHolder::getInstance();
-    if (holder == nullptr)
-        return;
-
-    virtualRouter = std::make_unique<eeval::VirtualAudioRouter>(holder->deviceManager, holder->settings.get());
-
-    const auto error = virtualRouter->restoreSavedMode();
-    if (virtualRouter->getMode() != eeval::VirtualAudioRouter::Mode::Off)
-        holder->getMuteInputValue().setValue(false);  // virtual routes can't feed back
-
-    if (error.isNotEmpty())
-        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                                               "Virtual Audio", error);
-
-    updateVirtualButton();
+    if (auto* holder = juce::StandalonePluginHolder::getInstance())
+        if (auto* props = holder->settings.get())
+            return props->getBoolValue(output ? "virtual.output" : "virtual.input", true);
 #endif
+    juce::ignoreUnused(output);
+    return false;
 }
 
-void EasyEffectsAudioProcessorEditor::applyVirtualMode(eeval::VirtualAudioRouter::Mode mode)
+void EasyEffectsAudioProcessorEditor::setVirtualOption(bool output, bool enabled)
 {
 #if JucePlugin_Build_Standalone
-    if (virtualRouter == nullptr)
+    auto* holder = juce::StandalonePluginHolder::getInstance();
+    if (holder == nullptr || asioHost == nullptr)
         return;
+    if (auto* props = holder->settings.get())
+        props->setValue(output ? "virtual.output" : "virtual.input", enabled);
 
-    const auto error = virtualRouter->setMode(mode);
-
-    if (error.isEmpty() && mode != eeval::VirtualAudioRouter::Mode::Off)
-        if (auto* holder = juce::StandalonePluginHolder::getInstance())
-            holder->getMuteInputValue().setValue(false);
-
-    if (error.isNotEmpty())
-        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                                               "Virtual Audio", error);
-
+    if (enabled) {
+        // Needs SAR as the engine; switching to it also creates + wires the devices.
+        if (!(asioEnabled() && eeval::sar::isSarDriver(asioDriver)))
+            enableAsio(eeval::sar::driverName);
+        else
+            sarDefaultsCountdown = 80;   // (re)apply the Windows default for this option
+    } else {
+        restoreWindowsDefaultsFromSar(output, !output);
+    }
     updateVirtualButton();
 #else
-    juce::ignoreUnused(mode);
+    juce::ignoreUnused(output, enabled);
 #endif
 }
 
 void EasyEffectsAudioProcessorEditor::updateVirtualButton()
 {
-    using Mode = eeval::VirtualAudioRouter::Mode;
-    const auto mode = virtualRouter != nullptr ? virtualRouter->getMode() : Mode::Off;
+    const bool sarOn = asioEnabled() && eeval::sar::isSarDriver(asioDriver);
+    const bool out = sarOn && virtualOptionEnabled(true);
+    const bool in  = sarOn && virtualOptionEnabled(false);
 
-    virtualBtn.setToggleState(mode != Mode::Off, juce::dontSendNotification);
-    virtualBtn.setButtonText(mode == Mode::SystemAudio ? "Virtual: System"
-                           : mode == Mode::Microphone  ? "Virtual: Mic"
-                                                       : "Virtual Audio");
+    virtualBtn.setToggleState(out || in, juce::dontSendNotification);
+    virtualBtn.setButtonText(out && in ? "Virtual: Both"
+                           : out       ? "Virtual: System"
+                           : in        ? "Virtual: Mic"
+                                       : "Virtual Audio");
     repaint();
 }
 
 void EasyEffectsAudioProcessorEditor::showVirtualAudioMenu()
 {
 #if JucePlugin_Build_Standalone
-    if (virtualRouter == nullptr)
-        initVirtualRouter();
-    if (virtualRouter == nullptr)
+    if (asioHost == nullptr)
         return;
 
-    using Mode = eeval::VirtualAudioRouter::Mode;
-    const bool installed = virtualRouter->isDriverInstalled();
-    const auto mode = virtualRouter->getMode();
+    const bool installed = asioHost->getDriverNames().contains(eeval::sar::driverName);
+    const bool sarOn = asioEnabled() && eeval::sar::isSarDriver(asioDriver);
 
     juce::PopupMenu menu;
-    menu.addSectionHeader(installed ? "EasyEffects Virtual Audio"
-                                    : "Virtual Audio driver not installed");
-
-    menu.addItem(1, eeval::VirtualAudioRouter::getModeName(Mode::Off), true, mode == Mode::Off);
-    menu.addItem(2, eeval::VirtualAudioRouter::getModeName(Mode::SystemAudio), installed, mode == Mode::SystemAudio);
-    menu.addItem(3, eeval::VirtualAudioRouter::getModeName(Mode::Microphone), installed, mode == Mode::Microphone);
+    menu.addSectionHeader(installed ? "Virtual audio (Synchronous Audio Router)"
+                                    : "Synchronous Audio Router is not installed");
+    menu.addItem(1, "Process system audio  (EasyEffects Speakers)", installed,
+                 sarOn && virtualOptionEnabled(true));
+    menu.addItem(2, "Process microphone  (EasyEffects Microphone)", installed,
+                 sarOn && virtualOptionEnabled(false));
     menu.addSeparator();
-
-    const auto outputs = virtualRouter->getPhysicalOutputs();
-    juce::PopupMenu outputMenu;
-    for (int i = 0; i < outputs.size(); ++i)
-        outputMenu.addItem(100 + i, outputs[i], true, outputs[i] == virtualRouter->getPhysicalOutput());
-    menu.addSubMenu("Speakers / headphones (system mode)", outputMenu, outputs.size() > 0);
-
-    const auto inputs = virtualRouter->getPhysicalInputs();
-    juce::PopupMenu inputMenu;
-    for (int i = 0; i < inputs.size(); ++i)
-        inputMenu.addItem(300 + i, inputs[i], true, inputs[i] == virtualRouter->getPhysicalInput());
-    menu.addSubMenu("Microphone (mic mode)", inputMenu, inputs.size() > 0);
-
+    menu.addItem(3, "Connect both tabs to the EasyEffects devices", sarOn);
+    menu.addItem(4, "Turn virtual audio off (use Windows Audio)", sarOn);
     menu.addSeparator();
-
-    // EEVirtualAudioSetup.exe ships next to EasyEffects.exe in release builds.
-    const auto setupExe = juce::File::getSpecialLocation(juce::File::currentExecutableFile)
-                              .getSiblingFile("EEVirtualAudioSetup.exe");
-    if (setupExe.existsAsFile()) {
-        if (installed)
-            menu.addItem(6, "Uninstall virtual audio driver...");
-        else
-            menu.addItem(5, "Install virtual audio driver...");
-    }
-    menu.addItem(4, installed ? "How it works..." : "How to install the driver...");
+    menu.addItem(5, installed ? "How it works..." : "Get Synchronous Audio Router...");
 
     juce::Component::SafePointer<EasyEffectsAudioProcessorEditor> safeThis(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&virtualBtn),
-        [safeThis, outputs, inputs, setupExe](int result) {
-            if (safeThis == nullptr || safeThis->virtualRouter == nullptr || result <= 0)
+        [safeThis, installed, sarOn](int result) {
+            if (safeThis == nullptr || result <= 0)
                 return;
-
             auto& self = *safeThis;
-            juce::String error;
 
-            if (result == 1)      self.applyVirtualMode(Mode::Off);
-            else if (result == 2) self.applyVirtualMode(Mode::SystemAudio);
-            else if (result == 3) self.applyVirtualMode(Mode::Microphone);
-            else if (result == 4) {
+            if (result == 1 || result == 2) {
+                const bool output = (result == 1);
+                const bool currentlyOn = sarOn && self.virtualOptionEnabled(output);
+                self.setVirtualOption(output, !currentlyOn);
+            } else if (result == 3) {
+                self.autoRouteSar(true);
+                self.sarDefaultsCountdown = 80;
+            } else if (result == 4) {
+                self.disableAsio();
+            } else if (result == 5) {
+                if (!installed) {
+                    juce::URL("https://github.com/eiz/SynchronousAudioRouter/releases").launchInDefaultBrowser();
+                    return;
+                }
                 juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon, "Virtual Audio",
-                    juce::String("EasyEffects ships its own virtual audio driver, so no VB-Cable is needed.\n\n")
-                    + "Process system audio:\n"
-                      "  Windows output -> EasyEffects Speakers -> effects -> your speakers/headphones\n\n"
-                    + "Process microphone:\n"
-                      "  your mic -> effects -> EasyEffects Microphone (select it in Discord/OBS/Zoom)\n\n"
-                    + "Install: run EEVirtualAudioSetup.exe (next to EasyEffects.exe), or use the\n"
-                      "Install item in this menu. Windows will ask for administrator permission.\n"
-                      "Your previous Windows default devices are restored when you turn this off or close the app.");
+                    "EasyEffects creates its own Windows devices through Synchronous Audio Router (SAR):\n\n"
+                    "Process system audio:\n"
+                    "  apps -> EasyEffects Speakers -> Output tab effects -> your speakers/headphones\n\n"
+                    "Process microphone:\n"
+                    "  your mic -> Input tab effects -> EasyEffects Microphone (pick it in Discord/OBS/Zoom)\n\n"
+                    "The devices exist while EasyEffects is running. SAR needs EasyEffects to run as\n"
+                    "administrator (it offers to restart that way). Your previous Windows default devices\n"
+                    "are restored when you turn an option off or close EasyEffects.");
             }
-            else if (result == 5 || result == 6) {
-                // Turn routing off before the driver goes away.
-                if (result == 6)
-                    self.applyVirtualMode(Mode::Off);
-                // The setup exe's manifest requests elevation, so Windows shows a UAC prompt.
-                if (!setupExe.startAsProcess(result == 6 ? "/uninstall" : ""))
-                    error = "Could not start " + setupExe.getFullPathName();
-            }
-            else if (result >= 300 && result - 300 < inputs.size())
-                error = self.virtualRouter->setPhysicalInput(inputs[result - 300]);
-            else if (result >= 100 && result - 100 < outputs.size())
-                error = self.virtualRouter->setPhysicalOutput(outputs[result - 100]);
-
-            if (error.isNotEmpty())
-                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Virtual Audio", error);
-
             self.updateVirtualButton();
         });
 #endif
 }
-
 // --- ListBoxModel ---
 
 int EasyEffectsAudioProcessorEditor::getNumRows() {

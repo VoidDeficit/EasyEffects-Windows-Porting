@@ -9,7 +9,6 @@
 #include "ui/SidebarRowCustomComponent.h"
 #include "ui/EffectPage.h"
 #include "dsp/EffectRegistry.h"
-#include "audio/VirtualAudioRouter.h"
 #include "audio/SecondaryPipeline.h"
 #include "audio/AsioHost.h"
 
@@ -89,7 +88,7 @@ private:
     // both tabs to them and make them the Windows defaults (restored on exit).
     void autoRouteSar(bool force);
     void trySwitchWindowsDefaultsToSar();   // retried from the timer until SAR's devices exist
-    void restoreWindowsDefaultsFromSar();
+    void restoreWindowsDefaultsFromSar(bool render = true, bool capture = true);
     int sarDefaultsCountdown = 0;
     static bool driverNeedsElevation(const juce::String& driver) {
         return driver.containsIgnoreCase("Synchronous Audio Router");
@@ -101,9 +100,9 @@ private:
     }
 
     // Built-in virtual audio routing (standalone only)
-    void initVirtualRouter();
+    bool virtualOptionEnabled(bool output) const;     // option saved in settings (default on)
+    void setVirtualOption(bool output, bool enabled); // turn SAR + Windows default on/off
     void showVirtualAudioMenu();
-    void applyVirtualMode(eeval::VirtualAudioRouter::Mode mode);
     void updateVirtualButton();
 
     // button drawn with three lines (no icon font needed)
@@ -168,9 +167,6 @@ private:
     juce::String savedOutputDevice;  // original output device before monitor toggle
     juce::String monitorDeviceName;  // user-chosen monitor/playback device
     juce::AudioDeviceManager* monitoredDeviceManager = nullptr;  // pipeline being monitored
-
-    // Routing through the EasyEffects Virtual Audio driver
-    std::unique_ptr<eeval::VirtualAudioRouter> virtualRouter;
 
     // Layout constants
     static constexpr int headerHeight = 46;

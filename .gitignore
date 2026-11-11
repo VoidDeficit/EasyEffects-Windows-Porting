@@ -10,19 +10,12 @@ CMakeFiles/
 *.suo
 *.vcxproj
 *.vcxproj.*
-# ...except the hand-written driver project
-!driver/EEVirtualAudio.vcxproj
 
 # Build outputs
 *.exe
 *.dll
 *.obj
 *.lib
-
-# Driver installer build + signing artefacts
-build-installer/
-driver/attestation/
-driver/signed/
 
 # Releases directory
 releases/

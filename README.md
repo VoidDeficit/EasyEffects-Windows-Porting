@@ -13,7 +13,7 @@ A real-time, modular DSP audio processing chain for Windows, built with C++ and 
 
 ## What it is NOT
 **This is NOT system-wide by default.** Unlike the Linux version, which uses PipeWire to take over all system audio natively, Windows does not make this easy.
-**For system-wide audio or mic processing, install the bundled EasyEffects Virtual Audio driver** (`driver/`). It adds its own virtual speaker and microphone devices, so you don't need a third-party cable. VB-Cable still works if you prefer it.
+**For system-wide audio or mic processing, install [Synchronous Audio Router](https://github.com/eiz/SynchronousAudioRouter/releases) (SAR, free).** EasyEffects then creates its own Windows devices, **EasyEffects Speakers** and **EasyEffects Microphone**, and routes them for you. No virtual cable is needed.
 
 ## Current Status: Alpha / Under Development
 **Please note:** This project is currently in the **Alpha** stage and is under active development. While the core architecture and many effects are stable, you may encounter bugs, UI glitches, or unoptimized CPU usage. Some specific audio effects might not yet work perfectly or exactly match their Linux counterparts. We appreciate your patience and bug reports!
@@ -39,22 +39,25 @@ A real-time, modular DSP audio processing chain for Windows, built with C++ and 
 
 ---
 
-## Built-in Virtual Audio (recommended)
+## Virtual Audio with Synchronous Audio Router (recommended)
 
-EasyEffects ships its own virtual audio driver with two loopback "cables":
+EasyEffects hosts [Synchronous Audio Router](https://github.com/eiz/SynchronousAudioRouter/releases)
+(SAR) through ASIO and uses it to create its own Windows devices:
 
-| Playback device | Recording device | Purpose |
+| Windows device | Type | Route |
 |---|---|---|
-| **EasyEffects Speakers** | EasyEffects Speakers Monitor | System audio into EasyEffects |
-| EasyEffects Mic Feed | **EasyEffects Microphone** | Processed voice out to Discord/OBS/Zoom |
+| **EasyEffects Speakers** | Playback | apps → **Output** tab effects → your speakers/headphones |
+| **EasyEffects Microphone** | Recording | your mic → **Input** tab effects → Discord / OBS / Zoom |
 
-1. Install the driver once: run **`EEVirtualAudioSetup.exe`** (next to `EasyEffects.exe`) or use **Virtual Audio → Install virtual audio driver...**. Release builds use a Microsoft-signed driver and work with Secure Boot on. Self-built development drivers need test signing mode; see [driver/README.md](driver/README.md#secure-boot).
-2. In EasyEffects, click **Virtual Audio** (top right) and choose:
-   - **Process system audio**: Windows output is routed through EasyEffects to your real speakers or headphones. Pick them in the same menu.
-   - **Process microphone**: your mic is processed and appears as **EasyEffects Microphone**, which is also made the Windows default input.
-3. Choosing **Off**, or closing the app, restores your previous Windows default devices.
+1. Install SAR once (it is signed and works with Secure Boot on). You do **not** need to configure it.
+2. In EasyEffects, click **Virtual Audio** (top right) and turn on **Process system audio** and/or **Process microphone**. EasyEffects then:
+   - writes SAR's configuration (your audio interface's ASIO driver as the hardware, plus the two EasyEffects devices);
+   - starts SAR and wires both tabs to the new devices;
+   - makes **EasyEffects Speakers** / **EasyEffects Microphone** the Windows default devices.
+3. SAR only creates Windows devices for a host running **as administrator**, so EasyEffects offers to restart itself that way.
+4. Turning an option off, choosing **Turn virtual audio off**, or closing EasyEffects restores your previous Windows default devices. The devices exist only while EasyEffects is running.
 
-The manual VB-Cable setups below still work.
+Your audio interface needs an ASIO driver (most USB interfaces and mixers ship one, e.g. the FLOW 8's *FLOW ASIO Driver*).
 
 ---
 
@@ -83,34 +86,6 @@ own driver, ...) and use Windows Audio for the other end of each pipeline:
 Both Windows Audio devices run on the Windows clock while the ASIO driver runs
 on its own: EasyEffects resamples when the rates differ and FIFOs absorb clock
 drift, so the two sides stay in sync without growing latency.
-
----
-
-## Microphone Audio Setup with VB-Cable (Voice Processing)
-
-To process your microphone for Discord, Zoom, or OBS:
-
-1. Download and install a free Virtual Audio Cable like [VB-Cable](https://vb-audio.com/Cable/).
-2. Open EasyEffects Windows. Click **Options -> Audio Settings**.
-3. Set **Input** to your physical microphone (e.g., *HyperX QuadCast* or *Focusrite USB*).
-4. Set **Output** to **CABLE Input**.
-5. In your chat application (Discord, Zoom, etc.), set your input device to **CABLE Output**.
-
-Now your microphone is processed by EasyEffects before reaching your chat apps!
-
----
-
-## System-Wide Audio Setup with VB-Cable
-
-To process audio from games, Spotify, or your whole system:
-
-1. Download and install a free Virtual Audio Cable like [VB-Cable](https://vb-audio.com/Cable/).
-2. In Windows Sound Settings, set your Default Playback Device to **CABLE Input**.
-3. Open EasyEffects Windows. Click **Options -> Audio Settings**.
-4. Set **Input** to **CABLE Output**.
-5. Set **Output** to your physical headphones/speakers.
-
-Now, all system audio routes through EasyEffects before reaching your ears!
 
 ---
 
@@ -158,17 +133,6 @@ powershell -ExecutionPolicy Bypass -File scripts\package_release.ps1
 ```
 The output will be placed in the `releases/` directory.
 
-### 4. Virtual Audio Driver (optional)
-The driver needs the Windows Driver Kit (WDK) in addition to Visual Studio:
-```bash
-msbuild driver\EEVirtualAudio.vcxproj /p:Configuration=Release /p:Platform=x64
-```
-To build the installer exe (driver included):
-```bash
-powershell -ExecutionPolicy Bypass -File scripts\build_driver_installer.ps1
-```
-`package_release.ps1` then puts `EEVirtualAudioSetup.exe` next to `EasyEffects.exe`. For a Secure Boot-compatible (Microsoft-signed) release, see [driver/README.md](driver/README.md#secure-boot).
-
 ---
 
 ## License & Compliance
@@ -179,6 +143,8 @@ This project is licensed under the **GNU General Public License v3.0 (GPLv3)**. 
 - [JUCE Framework](https://juce.com/) (GPLv3 for open source)
 - [RNNoise](https://github.com/xiph/rnnoise) (BSD 3-Clause)
 - [SoundTouch](https://codeberg.org/soundtouch/soundtouch) (LGPL) - Dynamically linked where applicable or utilized under LGPL compliance terms.
+- Steinberg ASIO interface headers (bundled with JUCE), used under GPLv3 (Steinberg dual-licenses the ASIO SDK under its proprietary licence or GPLv3).
+- [Synchronous Audio Router](https://github.com/eiz/SynchronousAudioRouter) is installed separately by the user; EasyEffects only hosts it through ASIO.
 
 ---
 

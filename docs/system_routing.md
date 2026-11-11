@@ -1,80 +1,56 @@
 # Windows System-wide Audio Routing Guide
 
-Because JUCE does not directly interact with the low-level Windows Audio Processing Object (APO) architecture, EasyEffects Windows operates as a Standalone Audio Host. 
+Windows has no PipeWire-style way for an app to take over system audio, so
+EasyEffects Windows runs as a standalone audio host and gets audio in and out
+through virtual devices. Those devices come from
+[Synchronous Audio Router](https://github.com/eiz/SynchronousAudioRouter/releases)
+(SAR), a free, signed driver that works with Secure Boot on. EasyEffects hosts
+SAR through ASIO and configures it automatically.
 
-To apply these effects to your system-wide audio (YouTube, Spotify, games), audio has to be looped through a virtual device.
+## Overview
 
-> **Recommended:** use the bundled **EasyEffects Virtual Audio** driver (`driver/`, see [driver/README.md](../driver/README.md)). After installing it, the app's **Virtual Audio** button does every step below automatically, using *EasyEffects Speakers* / *EasyEffects Speakers Monitor* for system audio and *EasyEffects Mic Feed* / *EasyEffects Microphone* for voice. It restores your Windows defaults when you turn it off.
->
-> The rest of this guide describes the manual **Virtual Audio Cable (VAC)** workflow with third-party cables.
+| Windows device | Created by | Signal path |
+|---|---|---|
+| **EasyEffects Speakers** (playback) | SAR, configured by EasyEffects | apps → **Output** tab effects → your speakers/headphones |
+| **EasyEffects Microphone** (recording) | SAR, configured by EasyEffects | your mic → **Input** tab effects → Discord / OBS / Zoom |
 
-## Overview of the Pipeline
-
-1. **System Output** is sent to a *Virtual Cable Input*.
-2. **EasyEffects App** listens to the *Virtual Cable Output*.
-3. **EasyEffects App** processes the audio through the DSP chain.
-4. **EasyEffects App** pushes the processed audio to your physical *Headphones/Speakers*.
-
----
-
-## Step-by-Step Setup
-
-### Step 1: Install a Virtual Audio Cable
-You need a kernel-level driver that creates a virtual loopback device. The two best options are:
-- [VB-Audio Virtual Cable (Free)](https://vb-audio.com/Cable/)
-- [Virtual Audio Cable (Paid/Trial)](https://vac.muzychenko.net/en/)
-
-Download and install your chosen cable, and then explicitly **Restart your PC**.
-
-### Step 2: Configure Windows Audio
-1. Open the Windows **Settings** app -> **System** -> **Sound**.
-2. Under **Output**, set your default playback device to **CABLE Input (VB-Audio Virtual Cable)**.
-   *Note: At this point, you will not hear any audio on your system because it is being piped into the void.*
-
-### Step 3: Configure EasyEffects Windows
-1. Open the **EasyEffects Standalone** application.
-2. In the top OS menubar of the app, click **Options -> Audio/MIDI Settings**.
-3. Configure the settings exactly as follows:
-   * **Audio Device Type:** `Windows Audio`
-   * **Input Device:** `CABLE Output (VB-Audio Virtual Cable)`
-   * **Output Device:** `Your Real Physical Headphones / Speakers (e.g., Speakers K75)`
-   * **Sample Rate:** `48000 Hz` (Recommended to match standard Windows format)
-   * **Audio Buffer Size:** `512` samples (Lower means less latency, but higher CPU usage).
-   * **Feedback Loop:** Uncheck "Mute audio input" so audio flows through.
-
-### Step 4: Verify the DSP Chain
-1. Play some audio from a web browser or Spotify.
-2. Open EasyEffects and check the **Level Meter** in the footer. You should see the graphical meters moving in real-time.
-3. Turn on the **Equalizer** or **Limiter** and make extreme changes to verify that the core audio pipeline is successfully routing into your headphones.
+Both tabs run at the same time, through one ASIO driver.
 
 ---
 
-## Discord / Voice Chat Routing (Microphone Processing)
+## Setup
 
-For processing your **microphone** audio before sending it to Discord, the routing is different:
+1. **Install SAR** from its releases page (the signed release). Nothing needs
+   to be set up inside it.
+2. **Make sure your audio interface has an ASIO driver** (e.g. the Behringer
+   FLOW 8's *FLOW ASIO Driver*). SAR uses it as the real hardware and clock.
+3. **Open EasyEffects → Virtual Audio** (top right) and turn on
+   **Process system audio** and/or **Process microphone**. EasyEffects:
+   - writes `%APPDATA%\SynchronousAudioRouter\default.json`: the interface's
+     ASIO driver as the hardware and the two EasyEffects devices (any endpoints
+     you created yourself are kept; the original file is backed up once as
+     `default.json.before-easyeffects`);
+   - switches the audio engine to SAR (→ **Audio engine**);
+   - wires the **Output** tab: EasyEffects Speakers → effects → the
+     interface's first outputs; and the **Input** tab: the interface's first
+     inputs → effects → EasyEffects Microphone;
+   - makes EasyEffects Speakers / EasyEffects Microphone the Windows defaults.
+4. **Allow "Restart as administrator".** SAR only creates its Windows devices
+   for a host running as administrator.
+5. In **Discord / OBS / Zoom**, choose **EasyEffects Microphone** as the input
+   (it is also the Windows default while the option is on).
 
-### Signal Chain
-```
-Physical Mic (Fifine) → EasyEffects → VB-Audio Virtual Cable → Discord
-```
+Turning an option off, choosing **Turn virtual audio off**, or closing
+EasyEffects hands the Windows default devices back to the ones you used before.
+The EasyEffects devices exist only while EasyEffects is running.
 
-### EasyEffects Audio/MIDI Settings
-| Setting | Value |
-|---------|-------|
-| Audio Device Type | Windows Audio |
-| **Input** | **Microphone (Fifine Microphone)** |
-| **Output** | **CABLE Input (VB-Audio Virtual Cable)** |
-| Feedback Loop | **Uncheck** "Mute audio input" |
-| Sample Rate | 48000 Hz |
-| Audio Buffer Size | 512 samples (10.7 ms) |
+You can change any route afterwards with the sidebar rows (▾) on each tab. The
+automatic wiring never overrides a route you picked yourself; use
+**Virtual Audio → Connect both tabs to the EasyEffects devices** to reapply it.
 
-### Discord Settings
-| Setting | Value |
-|---------|-------|
-| **Input Device** | **CABLE Output (VB-Audio Virtual Cable)** |
-| **Output Device** | **Speakers (K75) or your headphones** |
+---
 
-### Recommended Voice Effects Settings
+## Recommended Voice Effects (Input tab)
 
 | Effect | Recommended Settings | Purpose |
 |--------|---------------------|---------|
@@ -89,31 +65,20 @@ Physical Mic (Fifine) → EasyEffects → VB-Audio Virtual Cable → Discord
 
 ---
 
-## ASIO ⇄ Windows Audio (Synchronous Audio Router, custom ASIO drivers)
+## ASIO ⇄ Windows Audio (manual routing)
 
-EasyEffects can host the ASIO driver itself, and each side of a pipeline may use
-Windows Audio instead of an ASIO channel pair:
+In ASIO mode each side of a pipeline may also use Windows Audio instead of an
+ASIO channel pair:
 
 | Pipeline | Input | Output |
 |---|---|---|
 | **Input** (mic) | Windows Audio microphone (WASAPI) | ASIO output pair |
 | **Output** (system) | ASIO input pair | Windows Audio output device (WASAPI) |
 
-Setup for "mic → custom ASIO" **and** "ASIO → speakers":
-
-1. Install the ASIO driver (e.g. Synchronous Audio Router on top of your
-   interface's ASIO driver). Run EasyEffects as administrator if the driver only
-   creates its Windows devices for elevated hosts (SAR does).
-2. → **Audio engine** → select the driver.
-3. **Input** tab → **Input device** → **Windows Audio microphone** → your real
-   microphone. It is captured through WASAPI, so Windows-only microphones work
-   even when the ASIO driver does not list them.
-4. **Input** tab → **Recorders** → the ASIO output pair that is your virtual
-   microphone. Pick that pair as the microphone in Discord/OBS/Zoom.
-5. **Output** tab → **Players** → the ASIO input pair carrying the audio to
-   process (e.g. a SAR "Players" endpoint).
-6. **Output** tab → **Output device** → **Windows Audio output device** → your
-   real speakers/headphones.
+- **Input** tab → **Input device** → **Windows Audio microphone**: for mics that
+  your ASIO driver doesn't expose.
+- **Output** tab → **Output device** → **Windows Audio output device**: to
+  play the processed system audio on speakers/headphones outside the interface.
 
 The WASAPI devices and the ASIO driver have independent clocks, so EasyEffects
 resamples if the rates differ and buffers through FIFOs (dropping old audio or
@@ -122,5 +87,5 @@ inserting silence on drift) to keep latency stable.
 ---
 
 ## Latency Optimization Tips
-- **Buffer Size:** If you experience "crackling" or "pops", increase the buffer size in EasyEffects (e.g. 512 -> 1024). If you experience visual lag while watching videos, *decrease* the buffer size (e.g. 512 -> 128).
-- **Match Sample Rates:** Ensure that the Windows Sound Control Panel properties for both your *Physical Headphones* and the *Virtual Cable* are perfectly matched (e.g., exactly `24-bit, 48000 Hz`). Mixed sample rates force Windows into heavy resampling, destroying latency.
+- **Buffer size:** set it in the ASIO driver's panel (→ **ASIO control panel**). If you hear crackling or pops, increase it; if video and audio drift apart, decrease it.
+- **Match sample rates:** keep your interface and Windows' device formats at the same rate (e.g. 48000 Hz). Mismatched rates force extra resampling.

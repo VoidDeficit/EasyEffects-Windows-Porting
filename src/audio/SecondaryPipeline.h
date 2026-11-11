@@ -19,17 +19,7 @@ namespace eeval {
 class SecondaryPipeline
 {
 public:
-    /** otherPipelineOutput: the output device of the other (Input) pipeline. If
-        that pipeline already sends into VB-Cable, this one won't listen to the
-        same cable on first run (that would play your microphone back to you). */
-    SecondaryPipeline(juce::PropertySet* settings, const juce::String& key,
-                      const juce::String& otherPipelineOutput = {});
-
-    /** True when the two pipelines are wired through the same VB-Cable
-        (Input pipeline -> "CABLE Input", Output pipeline <- "CABLE Output"). */
-    static bool sharesCableWith(const juce::String& thisInput, const juce::String& otherOutput) {
-        return thisInput.startsWithIgnoreCase("CABLE Output") && otherOutput.startsWithIgnoreCase("CABLE Input");
-    }
+    SecondaryPipeline(juce::PropertySet* settings, const juce::String& key);
     ~SecondaryPipeline();
 
     EasyEffectsAudioProcessor& processor() noexcept      { return *proc; }
@@ -43,7 +33,6 @@ private:
 
     juce::PropertySet* settings;
     juce::String key;
-    juce::String otherOutput;
 
     std::unique_ptr<EasyEffectsAudioProcessor> proc;
     juce::AudioDeviceManager devices;

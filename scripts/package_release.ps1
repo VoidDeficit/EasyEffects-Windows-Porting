@@ -50,35 +50,6 @@ if (Test-Path $Vst3Source) {
 Copy-Item $QuickStart -Destination $ReleaseContentDir
 Copy-Item $License -Destination $ReleaseContentDir
 
-# Virtual audio driver installer (built by scripts\build_driver_installer.ps1)
-$SetupExe = Join-Path $RootDir "build-installer\Release\EEVirtualAudioSetup.exe"
-if (Test-Path $SetupExe) {
-    Copy-Item $SetupExe -Destination $ReleaseContentDir
-    Write-Host "Included EEVirtualAudioSetup.exe."
-} else {
-    Write-Warning "EEVirtualAudioSetup.exe not built. Run scripts\build_driver_installer.ps1 (or -Release)."
-}
-
-# Raw virtual audio driver package (optional; built with the WDK via driver\EEVirtualAudio.vcxproj)
-$DriverBuildDir = Join-Path $RootDir "driver\build\x64\Release"
-$DriverPackageDir = Join-Path $DriverBuildDir "EEVirtualAudio"
-if (-not (Test-Path (Join-Path $DriverPackageDir "EEVirtualAudio.inf"))) { $DriverPackageDir = $DriverBuildDir }
-if (Test-Path (Join-Path $DriverPackageDir "EEVirtualAudio.sys")) {
-    $DriverOut = Join-Path $ReleaseContentDir "driver"
-    New-Item -ItemType Directory -Force -Path $DriverOut | Out-Null
-    foreach ($f in @("EEVirtualAudio.sys", "EEVirtualAudio.inf", "EEVirtualAudio.cat")) {
-        $src = Join-Path $DriverPackageDir $f
-        if (Test-Path $src) { Copy-Item $src -Destination $DriverOut }
-    }
-    Get-ChildItem $DriverBuildDir -Filter "*.cer" -ErrorAction SilentlyContinue | Copy-Item -Destination $DriverOut
-    Copy-Item (Join-Path $RootDir "driver\install.ps1") -Destination $DriverOut
-    Copy-Item (Join-Path $RootDir "driver\uninstall.ps1") -Destination $DriverOut
-    Copy-Item (Join-Path $RootDir "driver\README.md") -Destination $DriverOut
-    Write-Host "Included virtual audio driver package."
-} else {
-    Write-Warning "Virtual audio driver not built ($DriverBuildDir). Release will not include it."
-}
-
 # 5. Create Zip Archive (if requested)
 if (-not $NoZip) {
     Write-Host "Creating Zip Archive..."
