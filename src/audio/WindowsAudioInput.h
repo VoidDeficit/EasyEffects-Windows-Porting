@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "ClockBridge.h"
 
 namespace eeval {
 
@@ -12,14 +13,12 @@ namespace eeval {
  * ASIO interface. Microphones that Windows can see but the ASIO driver cannot
  * (USB headsets, webcams, Bluetooth mics, ...) therefore could not be used with
  * the ASIO engine. This class captures such a device through WASAPI and hands
- * the audio to the ASIO callback over a lock-free FIFO, so the Input pipeline
- * can process the Windows microphone and write it to any ASIO output pair
- * (e.g. a virtual microphone endpoint of a custom ASIO driver).
+ * the audio to the ASIO callback, so the Input pipeline can process the Windows
+ * microphone and write it to any ASIO output pair (e.g. a virtual microphone).
  *
- * The ASIO driver and the capture device run on independent clocks:
- *  - if the device cannot run at the ASIO rate, the stream is resampled;
- *  - a small FIFO absorbs clock drift (old audio is dropped when it fills up,
- *    silence is produced when it runs empty).
+ * The ASIO driver and the capture device run on independent clocks. A
+ * ClockBridge resamples between them and continuously cancels the drift, so
+ * the delay stays small and constant instead of growing over time.
  */
 class WindowsAudioInput : private juce::AudioIODeviceCallback
 {
@@ -38,8 +37,11 @@ public:
     bool isRunning() const noexcept { return running.load(); }
     juce::String getDeviceName() const { return currentName; }
 
-    /** Called on the audio thread: fills dest (1 or 2 channels) with
-        numSamples; silence when the FIFO has run dry. */
+    /** Buffered audio between the device and ASIO, in milliseconds. */
+    double getBufferedMs() const noexcept { return bridge.getBufferedMs(); }
+
+    /** Called on the ASIO thread: fills dest (1 or 2 channels) with
+        numSamples; silence while the bridge is (re)filling. */
     void readInto(juce::AudioBuffer<float>& dest, int numSamples);
 
 private:
@@ -50,22 +52,11 @@ private:
     void audioDeviceStopped() override;
     void audioDeviceError(const juce::String& message) override;
 
-    void pushBlock(const juce::AudioBuffer<float>& source, int numSamples) noexcept;
-
-    // All buffers are allocated once so no audio callback ever has to allocate.
-    static constexpr int fifoFrames   = 1 << 18;   // 5.4 s at 48 kHz, 1.4 s at 192 kHz
-    static constexpr int scratchFrames = 1 << 13;  // 8192 frames per channel
-
     std::unique_ptr<juce::AudioIODeviceType> deviceType;
     std::unique_ptr<juce::AudioIODevice> device;
     juce::String currentName;
 
-    juce::AudioBuffer<float> fifoBuffer;
-    juce::AbstractFifo fifo { fifoFrames };
-    juce::AudioBuffer<float> scratch;
-    juce::LagrangeInterpolator interpolators[2];
-
-    std::atomic<double> sourceRate { 0.0 }, targetRate { 0.0 };
+    ClockBridge bridge;
     std::atomic<bool> running { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WindowsAudioInput)

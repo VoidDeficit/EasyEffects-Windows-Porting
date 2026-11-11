@@ -1,5 +1,6 @@
 # CMake build artifacts
 build/
+build-test/
 .cache/
 compile_commands.json
 CMakeFiles/

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "ClockBridge.h"
 
 namespace eeval {
 
@@ -12,10 +13,9 @@ namespace eeval {
  * from an ASIO input pair, through its effects chain, out to the speakers or
  * headphones Windows knows about (ASIO driver -> effects -> Windows device).
  *
- * The ASIO driver and the playback device run on independent clocks:
- *  - the stream is resampled if WASAPI cannot run at the ASIO rate;
- *  - a FIFO absorbs clock drift (old audio is dropped when it fills up,
- *    silence is played when it runs empty).
+ * The ASIO driver and the playback device run on independent clocks. A
+ * ClockBridge resamples between them and continuously cancels the drift, so
+ * the delay stays small and constant instead of growing over time.
  */
 class WindowsAudioOutput : private juce::AudioIODeviceCallback
 {
@@ -34,6 +34,9 @@ public:
     bool isRunning() const noexcept { return running.load(); }
     juce::String getDeviceName() const { return currentName; }
 
+    /** Buffered audio between ASIO and the device, in milliseconds. */
+    double getBufferedMs() const noexcept { return bridge.getBufferedMs(); }
+
     /** Called on the ASIO thread: queues processed audio for playback. */
     void writeFrom(const juce::AudioBuffer<float>& source, int numSamples);
 
@@ -45,22 +48,11 @@ private:
     void audioDeviceStopped() override;
     void audioDeviceError(const juce::String& message) override;
 
-    /** Audio thread: returns how many frames were copied into dest. */
-    int pullBlock(juce::AudioBuffer<float>& dest, int numSamples) noexcept;
-
-    static constexpr int fifoFrames    = 1 << 18;
-    static constexpr int scratchFrames = 1 << 13;
-
     std::unique_ptr<juce::AudioIODeviceType> deviceType;
     std::unique_ptr<juce::AudioIODevice> device;
     juce::String currentName;
 
-    juce::AudioBuffer<float> fifoBuffer;
-    juce::AbstractFifo fifo { fifoFrames };
-    juce::AudioBuffer<float> scratch;
-    juce::LagrangeInterpolator interpolators[2];
-
-    std::atomic<double> sourceRate { 0.0 }, targetRate { 0.0 };
+    ClockBridge bridge;
     std::atomic<bool> running { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WindowsAudioOutput)

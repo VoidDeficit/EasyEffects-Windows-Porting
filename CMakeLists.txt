@@ -95,6 +95,7 @@ target_sources(EasyEffects
     src/audio/SarAutoSetup.cpp
     src/audio/WindowsAudioInput.cpp
     src/audio/WindowsAudioOutput.cpp
+    src/audio/ClockBridge.cpp
 )
 
 # Link JUCE modules
@@ -134,3 +135,15 @@ endif()
 # Generate JuceHeader.h
 juce_generate_juce_header(EasyEffects)
 
+
+# Offline tests (not part of the app). cmake -DEE_BUILD_TESTS=ON
+option(EE_BUILD_TESTS "Build the offline test programs" OFF)
+if(EE_BUILD_TESTS)
+    juce_add_console_app(ClockBridgeTest PRODUCT_NAME "ClockBridgeTest")
+    target_sources(ClockBridgeTest PRIVATE tests/ClockBridgeTest.cpp src/audio/ClockBridge.cpp)
+    target_include_directories(ClockBridgeTest PRIVATE src)
+    target_compile_definitions(ClockBridgeTest PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(ClockBridgeTest PRIVATE juce::juce_audio_basics
+                          PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+    juce_generate_juce_header(ClockBridgeTest)
+endif()
