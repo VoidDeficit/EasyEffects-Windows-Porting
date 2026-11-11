@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
-project(EasyEffectsWindowsV2 VERSION 0.1.0)
+# The app version lives in VERSION (X.Y.Z). Bumping it on master makes the
+# release workflow build and publish a new release.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" EE_VERSION)
+string(STRIP "${EE_VERSION}" EE_VERSION)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+project(EasyEffectsWindowsV2 VERSION ${EE_VERSION})
+
+# GitHub repository the app checks for new releases ("owner/name").
+set(EE_UPDATE_REPO "VoidDeficit/EasyEffects-Windows-Porting" CACHE STRING "GitHub repository checked for updates")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,6 +39,7 @@ juce_add_plugin(EasyEffects
     PLUGIN_CODE Eeff
     FORMATS Standalone VST3
     PRODUCT_NAME "EasyEffects"
+    VERSION ${EE_VERSION}
     VST3_CAN_REPLACE_VST2 FALSE
 )
 
@@ -76,6 +85,7 @@ target_sources(EasyEffects
     src/ui/ConvolverEditor.cpp
     src/ui/GenericModuleEditor.cpp
     src/ui/WindowsChrome.cpp
+    src/app/Updater.cpp
     src/PresetManager.cpp
     src/audio/WindowsAudioEndpoints.cpp
     src/audio/SecondaryPipeline.cpp
@@ -103,6 +113,7 @@ target_include_directories(EasyEffects PRIVATE src)
 
 # Add compile definitions
 target_compile_definitions(EasyEffects PUBLIC JUCE_VST3_CAN_REPLACE_VST2=0)
+target_compile_definitions(EasyEffects PRIVATE EE_UPDATE_REPO="${EE_UPDATE_REPO}")
 
 # ASIO support (lets EasyEffects host ASIO drivers such as Synchronous Audio
 # Router). JUCE bundles the Steinberg ASIO interface headers, which Steinberg

@@ -52,6 +52,13 @@ EasyEffectsAudioProcessorEditor::EasyEffectsAudioProcessorEditor(EasyEffectsAudi
     addAndMakeVisible(nav);
     buildNavigation();
 
+    // --- Updates ---------------------------------------------------------------
+    updater.onChange = [this] { if (settingsPage) settingsPage->refresh(); };
+    updater.onUpdateFound = [this](const eeval::app::Updater::Release& r) {
+        if (automaticUpdateCheck) promptForUpdate(r);
+        automaticUpdateCheck = false;
+    };
+
     // --- Command bar --------------------------------------------------------
     presetBtn.getProperties().set("dropdown", true);
     presetBtn.getProperties().set("icon", (int)icon::library);
@@ -114,6 +121,16 @@ EasyEffectsAudioProcessorEditor::EasyEffectsAudioProcessorEditor(EasyEffectsAudi
         juce::MessageManager::callAsync([safeThis] {
             if (safeThis == nullptr) return;
             auto& self = *safeThis;
+
+            // Installed copy opened normally (Start menu, desktop, after an
+            // update): hand over to the "\EasyEffects\Launch" scheduled task,
+            // which runs EasyEffects with administrator rights without a UAC
+            // prompt. Nothing has been opened yet, so just quit.
+            if (!isElevatedCached() && eeval::app::startElevatedViaTask()) {
+                juce::JUCEApplicationBase::quit();
+                return;
+            }
+
             if (auto* s = self.settings()) {
                 self.monitorDeviceName = s->getValue("monitorDevice", "");
                 self.navUserCompact = s->getBoolValue("ui.navCompact", false);
@@ -122,6 +139,14 @@ EasyEffectsAudioProcessorEditor::EasyEffectsAudioProcessorEditor(EasyEffectsAudi
             self.initPipelines();
             self.updateVirtualButton();
             self.resized();
+
+            // Look for a new release a few seconds after start-up.
+            if (self.settings() == nullptr || self.settings()->getBoolValue("update.auto", true))
+                juce::Timer::callAfterDelay(5000, [safeThis] {
+                    if (safeThis == nullptr) return;
+                    safeThis->automaticUpdateCheck = true;
+                    safeThis->updater.check();
+                });
         });
     }
 #endif
@@ -468,9 +493,64 @@ void EasyEffectsAudioProcessorEditor::buildSettingsPage()
                         self->resized();
                     });
 
+    // --- Updates and start-up (standalone app only) ---------------------------
+    if (juce::JUCEApplicationBase::isStandaloneApp()) {
+        const bool installed = eeval::app::isInstalledCopy();
+        using State = eeval::app::Updater::State;
+
+        page.addSection("Updates");
+        page.addCard(icon::sync, "App updates", [self] { return self->updater.getStatusText(); })
+            .withButton([self, installed] {
+                    switch (self->updater.getState()) {
+                        case State::checking:    return juce::String("Checking...");
+                        case State::downloading: return juce::String("Downloading...");
+                        case State::available:   return juce::String(installed ? "Download and install"
+                                                                               : "Open download page");
+                        default:                 return juce::String("Check for updates");
+                    }
+                },
+                [self](juce::Component&) {
+                    self->automaticUpdateCheck = false;
+                    if (self->updater.getState() == State::available) self->updater.downloadAndInstall();
+                    else self->updater.check();
+                },
+                false, false,
+                [self] {
+                    const auto s = self->updater.getState();
+                    return s != State::checking && s != State::downloading;
+                });
+
+        page.addCard(icon::sync, "Check for updates automatically", [installed] {
+                return installed ? juce::String("When EasyEffects starts; updates install with one click")
+                                 : juce::String("When EasyEffects starts (portable copy: opens the download page)");
+            })
+            .withToggle([self] { return self->settings() == nullptr || self->settings()->getBoolValue("update.auto", true); },
+                        [self](bool on) { if (auto* s = self->settings()) s->setValue("update.auto", on); });
+
+        if (installed) {
+            autostartCached = eeval::app::isAutostartEnabled();
+            page.addCard(icon::admin, "Start when I sign in", [] {
+                    return isElevatedCached()
+                        ? juce::String("Starts EasyEffects with administrator rights, without a UAC prompt")
+                        : juce::String("Needs EasyEffects to run with administrator rights to change this");
+                })
+                .withToggle([self] { return self->autostartCached; },
+                            [self](bool on) {
+                                const auto err = eeval::app::setAutostartEnabled(on);
+                                self->autostartCached = eeval::app::isAutostartEnabled();
+                                if (err.isNotEmpty())
+                                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                                                                           "Start when I sign in", err);
+                            },
+                            [] { return isElevatedCached(); });
+        }
+    }
+
     page.addSection("About");
     page.addCard(icon::info, "EasyEffects for Windows", [] {
-            return juce::String("A Windows port of EasyEffects by Wellington Wallace. Licensed under GPLv3.");
+            return "Version " + eeval::app::currentVersion()
+                 + (eeval::app::isInstalledCopy() ? juce::String(" (installed)") : juce::String(" (portable)"))
+                 + ". A Windows port of EasyEffects by Wellington Wallace. Licensed under GPLv3.";
         })
         .withButton([] { return juce::String("Original project"); },
                     [](juce::Component&) { juce::URL("https://github.com/wwmm/easyeffects").launchInDefaultBrowser(); });
@@ -749,7 +829,8 @@ void EasyEffectsAudioProcessorEditor::restartElevated()
     if (asioHost != nullptr)
         asioHost->close();
 
-    if (!eeval::winaudio::relaunchSelfElevated()) {
+    // Installed copies use the scheduled task (no UAC prompt); otherwise ask Windows.
+    if (!eeval::app::startElevatedViaTask() && !eeval::winaudio::relaunchSelfElevated()) {
         // Declined or failed: carry on without admin rights.
         if (asioHost != nullptr && asioDriver.isNotEmpty())
             asioHost->open(asioDriver);
@@ -1744,4 +1825,23 @@ void EasyEffectsAudioProcessorEditor::resetEffect(int slotIndex)
             safeThis->moduleList.repaint();
         }
     });
+}
+
+void EasyEffectsAudioProcessorEditor::promptForUpdate(const eeval::app::Updater::Release& r)
+{
+    const bool installed = eeval::app::isInstalledCopy() && r.installerUrl.isNotEmpty();
+    juce::Component::SafePointer<EasyEffectsAudioProcessorEditor> safeThis(this);
+    juce::AlertWindow::showAsync(juce::MessageBoxOptions()
+        .withIconType(juce::MessageBoxIconType::InfoIcon)
+        .withTitle("Update available")
+        .withMessage("EasyEffects " + r.version + " is available. You have " + eeval::app::currentVersion() + ".\n\n"
+                     + (installed ? juce::String("It downloads and installs in the background, then EasyEffects restarts.")
+                                  : juce::String("This is a portable copy: download the new version from GitHub.")))
+        .withButton(installed ? "Install now" : "Open download page")
+        .withButton("Later"),
+        [safeThis](int result) {
+            if (result != 1 || safeThis == nullptr) return;
+            safeThis->showPage(Page::Settings);   // shows the download progress
+            safeThis->updater.downloadAndInstall();
+        });
 }

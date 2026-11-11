@@ -32,10 +32,25 @@ A real-time, modular DSP audio processing chain for Windows, built with C++ and 
 
 ## Download & Installation
 
-1. Go to the [Releases](../../releases) page.
-2. Download the latest `EasyEffects-Windows-vX.X.X.zip`.
-3. Extract the folder.
-4. Run `EasyEffects.exe`.
+Every release on the [Releases](../../releases) page has two downloads:
+
+| File | What it is |
+|---|---|
+| `EasyEffects-Windows-vX.Y.Z-Setup.exe` | **Installer (recommended).** Installs the app (and optionally the VST3), updates itself, and runs with administrator rights without a UAC prompt each time (needed for Virtual Audio). It can also start EasyEffects when you sign in. |
+| `EasyEffects-Windows-vX.Y.Z-Portable.zip` | **Portable.** Extract anywhere and run `EasyEffects.exe`. It tells you about new versions but does not update itself. |
+
+The installer registers two Task Scheduler tasks under `\EasyEffects\`: **Launch** (starts EasyEffects
+with administrator rights; the app hands over to it when you open it normally) and, if you tick the
+option, **Autostart** (at sign-in). You can turn autostart on or off later under **Settings > Updates**.
+Uninstalling removes both tasks.
+
+### Publishing a release
+
+Releases are built by GitHub Actions ([release.yml](.github/workflows/release.yml)). To publish one,
+bump the version in [`VERSION`](VERSION) (for example `0.2.0` to `0.3.0`) and push it to `master`.
+The workflow builds the app and the VST3, creates the portable zip and the installer, and publishes
+release `vX.Y.Z` with generated release notes. On other branches it only builds and attaches the files
+to the workflow run.
 
 ---
 

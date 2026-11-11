@@ -13,6 +13,7 @@
 #include "dsp/EffectRegistry.h"
 #include "audio/SecondaryPipeline.h"
 #include "audio/AsioHost.h"
+#include "app/Updater.h"
 
 /**
  * Main window: EasyEffects' structure, reimagined as a Windows 11 app.
@@ -184,6 +185,12 @@ private:
     // Devices / Settings pages
     juce::Viewport settingsViewport;
     std::unique_ptr<eeval::ui::SettingsPage> devicesPage, settingsPage;
+
+    // Updates (declared after the pages: its callbacks refresh them)
+    eeval::app::Updater updater;
+    bool automaticUpdateCheck = false;   // prompt only for the start-up check
+    bool autostartCached = false;        // "\EasyEffects\Autostart" task exists
+    void promptForUpdate(const eeval::app::Updater::Release& r);
 
     // Monitor state
     bool isMonitoring = false;

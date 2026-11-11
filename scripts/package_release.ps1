@@ -1,9 +1,13 @@
 param(
-    [string]$Version = "v0.1.0-alpha",
+    [string]$Version = "",
     [switch]$NoZip
 )
 
 $RootDir = (Get-Item -Path "$PSScriptRoot\..").FullName
+if (-not $Version) {
+    # Default to the version in the VERSION file, e.g. "v0.2.0".
+    $Version = "v" + (Get-Content (Join-Path $RootDir "VERSION") -Raw).Trim()
+}
 $ReleaseFolder = Join-Path $RootDir "releases"
 if (-not (Test-Path $ReleaseFolder)) {
     New-Item -ItemType Directory -Force -Path $ReleaseFolder | Out-Null
@@ -11,7 +15,7 @@ if (-not (Test-Path $ReleaseFolder)) {
 
 $ReleaseName = "EasyEffects-Windows-$Version"
 $ReleaseContentDir = Join-Path $ReleaseFolder $ReleaseName
-$ZipPath = Join-Path $ReleaseFolder "$ReleaseName.zip"
+$ZipPath = Join-Path $ReleaseFolder "$ReleaseName-Portable.zip"
 
 Write-Host "Packaging Release: $Version"
 
