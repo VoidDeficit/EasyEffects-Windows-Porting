@@ -34,7 +34,7 @@ jobs:
     runs-on: windows-2022
     steps:
       - name: Check out (with submodules)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -81,7 +81,9 @@ jobs:
           Get-ChildItem releases
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        # Convenience copy on the workflow run; a hiccup here must not block the release.
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
         with:
           name: EasyEffects-Windows-${{ steps.version.outputs.tag }}
           path: |
@@ -97,8 +99,22 @@ jobs:
           $tag = "${{ steps.version.outputs.tag }}"
           $files = Get-ChildItem releases -File | Where-Object { $_.Name -like "*-Portable.zip" -or $_.Name -like "*-Setup.exe" } |
                    ForEach-Object { $_.FullName }
-          gh release create $tag @files `
-            --target "${{ github.sha }}" `
-            --title "EasyEffects for Windows $tag" `
-            --generate-notes
-          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+          # GitHub occasionally refuses or drops a request (seen as HTTP 403 / 5xx),
+          # so retry; if the release already exists from a partial attempt, just
+          # (re)upload its files.
+          $ok = $false
+          for ($attempt = 1; $attempt -le 5 -and -not $ok; $attempt++) {
+            gh release view $tag *> $null
+            if ($LASTEXITCODE -eq 0) {
+              gh release upload $tag @files --clobber
+            } else {
+              gh release create $tag @files `
+                --target "${{ github.sha }}" `
+                --title "EasyEffects for Windows $tag" `
+                --generate-notes `
+                --latest
+            }
+            $ok = ($LASTEXITCODE -eq 0)
+            if (-not $ok) { Write-Host "Attempt $attempt failed, retrying..."; Start-Sleep -Seconds (20 * $attempt) }
+          }
+          if (-not $ok) { throw "Publishing release $tag failed after 5 attempts" }
