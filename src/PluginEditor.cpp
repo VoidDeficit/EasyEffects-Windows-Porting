@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include "ui/ConvolverEditor.h"
 #include "ui/WindowsChrome.h"
+#include "app/SingleInstance.h"
 #include "audio/WindowsAudioEndpoints.h"
 #include "audio/SarAutoSetup.h"
 
@@ -500,6 +501,12 @@ void EasyEffectsAudioProcessorEditor::buildSettingsPage()
             })
             .withToggle([self] { return self->settings() == nullptr || self->settings()->getBoolValue("tray.minimiseToTray", true); },
                         [self](bool on) { if (auto* s = self->settings()) s->setValue("tray.minimiseToTray", on); });
+        page.addCard(icon::down, "Start minimized", [] {
+                return juce::String("Start in the notification area without opening the window. "
+                                    "Click the tray icon or open EasyEffects again to show it.");
+            })
+            .withToggle([self] { return self->settings() != nullptr && self->settings()->getBoolValue("tray.startMinimized", false); },
+                        [self](bool on) { if (auto* s = self->settings()) s->setValue("tray.startMinimized", on); });
 
         page.addSection("Updates");
         page.addCard(icon::sync, "App updates", [self] { return self->updater.getStatusText(); })
@@ -832,9 +839,13 @@ void EasyEffectsAudioProcessorEditor::restartElevated()
     if (asioHost != nullptr)
         asioHost->close();
 
+    // Let the elevated copy take the single-instance lock.
+    eeval::app::releaseSingleInstance();
+
     // Installed copies use the scheduled task (no UAC prompt); otherwise ask Windows.
     if (!eeval::app::startElevatedViaTask() && !eeval::winaudio::relaunchSelfElevated()) {
         // Declined or failed: carry on without admin rights.
+        eeval::app::acquireSingleInstance();
         if (asioHost != nullptr && asioDriver.isNotEmpty())
             asioHost->open(asioDriver);
         repaint();

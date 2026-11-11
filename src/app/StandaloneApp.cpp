@@ -16,6 +16,7 @@
 
 #include <juce_audio_plugin_client/Standalone/juce_StandaloneFilterWindow.h>
 #include "Updater.h"
+#include "SingleInstance.h"
 #include "../PluginEditor.h"
 #include "../audio/WindowsAudioEndpoints.h"
 #include "BinaryData.h"
@@ -177,28 +178,43 @@ public:
     const juce::String getApplicationName() override    { return JucePlugin_Name; }
     const juce::String getApplicationVersion() override { return JucePlugin_VersionString; }
 
-    // Installed copies started without admin rights only hand over to the
-    // scheduled task, so they must not be blocked by the running instance.
-    bool moreThanOneInstanceAllowed() override
-    {
-        return isInstalledCopy() && !eeval::winaudio::isProcessElevated();
-    }
-
-    void anotherInstanceStarted(const juce::String& commandLine) override
-    {
-        if (mainWindow != nullptr && !commandLine.contains("--tray"))
-            mainWindow->showFromTray();
-    }
+    // One copy at a time is enforced by SingleInstance (works between
+    // administrator and normal copies, unlike JUCE's own check).
+    bool moreThanOneInstanceAllowed() override { return true; }
+    void anotherInstanceStarted(const juce::String&) override {}
 
     void initialise(const juce::String& commandLine) override
     {
-        // Installed copy opened normally: start the elevated Launch task (no
-        // UAC prompt) and leave. The task's copy shows the running window if
-        // EasyEffects is already open.
-        if (isInstalledCopy() && !eeval::winaudio::isProcessElevated() && startElevatedViaTask()) {
+        const bool fromSignInTask = commandLine.contains("--tray");
+
+        // Already running: bring that window forward, say so, and leave
+        // (silently when started by the sign-in task).
+        if (!acquireSingleInstance()) {
+            if (!fromSignInTask)
+                showAlreadyRunningMessage(requestShowRunningInstance());
             quit();
             return;
         }
+
+        // Installed copy opened normally: start the elevated Launch task (no
+        // UAC prompt) and leave; the task's copy takes the lock.
+        if (isInstalledCopy() && !eeval::winaudio::isProcessElevated()) {
+            releaseSingleInstance();
+            if (startElevatedViaTask()) {
+                quit();
+                return;
+            }
+            acquireSingleInstance();   // no task: carry on without admin rights
+        }
+
+        // Another start of EasyEffects asks this copy to show its window.
+        listenForShowRequests([] {
+            juce::MessageManager::callAsync([] {
+                if (auto* app = dynamic_cast<EasyEffectsApp*>(juce::JUCEApplicationBase::getInstance()))
+                    if (app->mainWindow != nullptr)
+                        app->mainWindow->showFromTray();
+            });
+        });
 
         if (juce::Desktop::getInstance().getDisplays().displays.isEmpty())
             return;
@@ -214,13 +230,19 @@ public:
         mainWindow->tray = tray.get();
         mainWindow->setIcon(renderAppIcon(128));
 
-        // "--tray" (sign-in task): keep running hidden in the tray.
-        if (!commandLine.contains("--tray"))
+        // Start hidden in the tray for "--tray" (sign-in task) or when
+        // Settings > System tray > Start minimized is on. Opening EasyEffects
+        // again, or clicking the tray icon, shows the window.
+        auto* settings = appProperties.getUserSettings();
+        const bool startHidden = commandLine.contains("--tray")
+                              || (settings != nullptr && settings->getBoolValue("tray.startMinimized", false));
+        if (!startHidden)
             mainWindow->setVisible(true);
     }
 
     void shutdown() override
     {
+        stopListeningForShowRequests();
         if (mainWindow != nullptr) mainWindow->tray = nullptr;
         tray = nullptr;
         mainWindow = nullptr;

@@ -41,7 +41,8 @@ Every release on the [Releases](../../releases) page has two downloads:
 
 EasyEffects lives in the notification area (system tray): closing or minimizing the window keeps
 it running with your effects on (switch this off under **Settings > System tray**), opening it again
-shows the running window, and the tray icon's menu turns the Output/Input effects on or off or quits.
+shows the running window (a second start says "EasyEffects is already open"), the window can start
+hidden in the tray (**Start minimized**), and the tray icon's menu turns the Output/Input effects on or off or quits.
 
 The installer registers two Task Scheduler tasks under `\EasyEffects\`: **Launch** (starts EasyEffects
 with administrator rights; the app hands over to it when you open it normally) and, if you tick the

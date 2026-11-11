@@ -88,6 +88,7 @@ target_sources(EasyEffects
     src/ui/WindowsChrome.cpp
     src/app/Updater.cpp
     src/app/StandaloneApp.cpp
+    src/app/SingleInstance.cpp
     src/PresetManager.cpp
     src/audio/WindowsAudioEndpoints.cpp
     src/audio/SecondaryPipeline.cpp
