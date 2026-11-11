@@ -1,4 +1,5 @@
 #include "EQPlotComponent.h"
+#include "Theme.h"
 #include "../PluginProcessor.h"
 #include "../dsp/SpectrumAnalyzer.h"
 #include "../dsp/EffectRegistry.h"
@@ -153,14 +154,16 @@ void EQPlotComponent::paint(juce::Graphics& g) {
     auto h = (float)getHeight();
 
     // Background
-    g.fillAll(juce::Colour(0xff1a1a1a));
+    g.fillAll(theme::plotBg);
 
     // Grid (Logarithmic)
-    g.setColour(juce::Colours::white.withAlpha(0.1f));
+    g.setColour(theme::gridLine);
     float freqs[] = { 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000 };
     for (auto f : freqs) {
         float x = getXForFreq(f) * w;
+        g.setColour(theme::gridLine);
         g.drawVerticalLine((int)x, 0.0f, h);
+        g.setColour(theme::gridText);
         g.drawText(f >= 1000 ? juce::String(f/1000, 1) + "k" : juce::String((int)f), 
                    (int)x + 2, (int)h - 15, 40, 15, juce::Justification::left);
     }
@@ -168,18 +171,20 @@ void EQPlotComponent::paint(juce::Graphics& g) {
     // Horizontal Grid (dB)
     for (float db = -24.0f; db <= 24.0f; db += 6.0f) {
         float y = getYForMag(juce::Decibels::decibelsToGain(db));
+        g.setColour(theme::gridLine);
         g.drawHorizontalLine((int)y, 0.0f, w);
+        g.setColour(theme::gridText);
         g.drawText(juce::String((int)db) + " dB", 2, (int)y - 12, 40, 12, juce::Justification::left);
     }
 
     // Spectrum Analyzer
-    g.setColour(juce::Colours::cyan.withAlpha(0.15f));
+    g.setColour(theme::accentPrimary.withAlpha(0.12f));
     g.fillPath(spectrumPath);
-    g.setColour(juce::Colours::cyan.withAlpha(0.3f));
+    g.setColour(theme::accentPrimary.withAlpha(0.28f));
     g.strokePath(spectrumPath, juce::PathStrokeType(1.0f));
 
     // Response Curve
-    g.setColour(juce::Colours::cyan.withAlpha(0.8f));
+    g.setColour(theme::accentPrimary);
     g.strokePath(responsePath, juce::PathStrokeType(2.5f));
 }
 

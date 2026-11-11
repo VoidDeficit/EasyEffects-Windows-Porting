@@ -81,7 +81,7 @@ void DynamicsVisualizer::paint(juce::Graphics& g) {
     g.fillAll(theme::bgSurface.withAlpha(0.5f));
     
     // Grid
-    g.setColour(theme::textSecondary.withAlpha(0.1f));
+    g.setColour(theme::gridLine);
     for (float db = -60.0f; db <= 0.0f; db += 10.0f) {
         float x = juce::jmap(db, -60.0f, 0.0f, 0.0f, w);
         float y = juce::jmap(db, -60.0f, 0.0f, h, 0.0f);
@@ -98,9 +98,9 @@ void DynamicsVisualizer::paint(juce::Graphics& g) {
         float ballX = juce::jmap(juce::jlimit(-60.0f, 0.0f, lastInputDb), -60.0f, 0.0f, 0.0f, w);
         float ballY = juce::jmap(juce::jlimit(-60.0f, 0.0f, lastOutputDb), -60.0f, 0.0f, h, 0.0f);
 
-        g.setColour(juce::Colours::cyan);
+        g.setColour(theme::accentPrimary);
         g.fillEllipse(ballX - 4, ballY - 4, 8, 8);
-        g.setColour(juce::Colours::white.withAlpha(0.5f));
+        g.setColour(theme::textPrimary.withAlpha(0.5f));
         g.drawEllipse(ballX - 5, ballY - 5, 10, 10, 1.0f);
     }
     

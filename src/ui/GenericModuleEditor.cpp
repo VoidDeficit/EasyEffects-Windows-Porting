@@ -26,7 +26,7 @@ GenericModuleEditor::GenericModuleEditor(juce::AudioProcessorValueTreeState& sta
         auto* label = new juce::Label(fullId + "_label", pdesc.label);
         label->setJustificationType(juce::Justification::centredLeft);
         label->setColour(juce::Label::textColourId, theme::textPrimary);
-        label->setFont(juce::Font(juce::FontOptions(14.0f)));
+        label->setFont(theme::body());
 
         addAndMakeVisible(slider);
         addAndMakeVisible(label);
@@ -47,7 +47,7 @@ GenericModuleEditor::GenericModuleEditor(juce::AudioProcessorValueTreeState& sta
         auto* label = new juce::Label(fullId + "_label", cdesc.label);
         label->setJustificationType(juce::Justification::centredLeft);
         label->setColour(juce::Label::textColourId, theme::textPrimary);
-        label->setFont(juce::Font(juce::FontOptions(14.0f)));
+        label->setFont(theme::body());
         addAndMakeVisible(label);
 
         choiceLabels.add(label);
@@ -65,7 +65,7 @@ GenericModuleEditor::GenericModuleEditor(juce::AudioProcessorValueTreeState& sta
         sliders.add(mixSlider);
         auto* mixLabel = new juce::Label(mixId + "_label", "Dry/Wet Mix");
         mixLabel->setColour(juce::Label::textColourId, theme::textPrimary);
-        mixLabel->setFont(juce::Font(juce::FontOptions(14.0f)));
+        mixLabel->setFont(theme::body());
         labels.add(mixLabel);
         addAndMakeVisible(mixLabel);
         attachments.add(new juce::AudioProcessorValueTreeState::SliderAttachment(apvts, mixId, *mixSlider));
@@ -185,7 +185,7 @@ void GenericModuleEditor::paint(juce::Graphics& g) {
 
     // Page title (effect name), like the plugin header in EasyEffects
     g.setColour(theme::textPrimary);
-    g.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
+    g.setFont(theme::subtitle());
     g.drawText(displayName, headerArea, juce::Justification::centredLeft, true);
 
     theme::drawCard(g, controlsCard, "Controls");

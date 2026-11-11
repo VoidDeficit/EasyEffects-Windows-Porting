@@ -1,4 +1,5 @@
 #include "EQNodeComponent.h"
+#include "Theme.h"
 #include "EQPlotComponent.h"
 #include "EQNodeSettingsPanel.h"
 #include "../dsp/EffectRegistry.h"
@@ -22,15 +23,15 @@ EQNodeComponent::EQNodeComponent(juce::AudioProcessorValueTreeState& vts, int sl
 void EQNodeComponent::paint(juce::Graphics& g) {
     if (enabledParam && enabledParam->load() < 0.5f) return;
 
-    g.setColour(juce::Colours::white.withAlpha(0.2f));
+    g.setColour(theme::textPrimary.withAlpha(0.35f));
     g.drawEllipse(getLocalBounds().toFloat().reduced(0.5f), 1.0f);
 
     auto color = juce::Colour::fromHSV((float)bandIdx / 10.0f, 0.7f, 0.9f, 1.0f);
     g.setColour(color);
     g.fillEllipse(getLocalBounds().toFloat().reduced(3.0f));
     
-    g.setColour(juce::Colours::white);
-    g.setFont(10.0f);
+    g.setColour(juce::Colours::black.withAlpha(0.8f));
+    g.setFont(theme::font(9.0f, true));
     g.drawText(juce::String(bandIdx + 1), getLocalBounds(), juce::Justification::centred);
 }
 

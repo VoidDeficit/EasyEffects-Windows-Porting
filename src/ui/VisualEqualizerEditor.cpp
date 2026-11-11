@@ -11,7 +11,7 @@ VisualEqualizerEditor::VisualEqualizerEditor(EasyEffectsAudioProcessor& p, juce:
     addAndMakeVisible(plot);
 
     titleLabel.setText("Parametric Equalizer", juce::dontSendNotification);
-    titleLabel.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
+    titleLabel.setFont(theme::subtitle());
     titleLabel.setColour(juce::Label::textColourId, theme::textPrimary);
     addAndMakeVisible(titleLabel);
 

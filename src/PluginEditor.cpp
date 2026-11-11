@@ -1,8 +1,12 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "ui/ConvolverEditor.h"
+#include "ui/WindowsChrome.h"
 #include "audio/WindowsAudioEndpoints.h"
 #include "audio/SarAutoSetup.h"
+
+namespace theme = eeval::theme;
+namespace icon  = eeval::theme::icon;
 
 // Elevation can't change while the process runs; ask Windows once.
 static bool isElevatedCached()
@@ -16,108 +20,82 @@ static bool isElevatedCached()
  #include <juce_audio_plugin_client/Standalone/juce_StandaloneFilterWindow.h>
 #endif
 
+static juce::String middleDot() { return juce::String::fromUTF8("  \xc2\xb7  "); }
+
 EasyEffectsAudioProcessorEditor::EasyEffectsAudioProcessorEditor(EasyEffectsAudioProcessor& p)
     : AudioProcessorEditor(&p), hostProcessor(p), activeProc(&p)
 {
+    eeval::ui::chrome::applyTheme(themeSetting());
+    customTheme.refreshColours();
     setLookAndFeel(&customTheme);
+    // Popup menus and dialogs live in their own windows and use the default look-and-feel.
+    juce::LookAndFeel::setDefaultLookAndFeel(&customTheme);
+    juce::Desktop::getInstance().addDarkModeSettingListener(this);
+
     setResizable(true, true);
-    setResizeLimits(880, 560, 3000, 2000);
-    setSize(1080, 700);
+    setResizeLimits(900, 600, 3200, 2200);
 
     activeSlots = proc().getActiveSlots();
 
-    // --- Toolbar: left tabs ---------------------------------------------
-    for (auto* b : { &effectsTab, &presetBtn, &bypassBtn, &monitorBtn, &virtualBtn })
-        b->getProperties().set("flat", true);   // EasyEffects toolbar buttons are flat
+    // --- Navigation pane ---------------------------------------------------
+    nav.onSelect = [this](const juce::String& id) {
+        if      (id == "output")   showPage(Page::Output);
+        else if (id == "input")    showPage(Page::Input);
+        else if (id == "devices")  showPage(Page::Devices);
+        else if (id == "settings") showPage(Page::Settings);
+    };
+    nav.onToggleCompact = [this] {
+        navUserCompact = !navUserCompact;
+        if (auto* s = settings()) s->setValue("ui.navCompact", navUserCompact);
+        resized();
+    };
+    addAndMakeVisible(nav);
+    buildNavigation();
 
-    effectsTab.setToggleState(true, juce::dontSendNotification);   // the only page
-    effectsTab.onClick = [this] { effectsTab.setToggleState(true, juce::dontSendNotification); };
-    addAndMakeVisible(effectsTab);
-
+    // --- Command bar --------------------------------------------------------
+    presetBtn.getProperties().set("dropdown", true);
+    presetBtn.getProperties().set("icon", (int)icon::library);
+    presetBtn.setTooltip("Save, load or delete presets for this pipeline");
     presetBtn.onClick = [this] { showPresetMenu(); };
     addAndMakeVisible(presetBtn);
 
-    // --- Toolbar: centre Output | Input pipeline switcher (standalone) ---
-    for (auto* t : { &outputTab, &inputTab }) {
-        t->getProperties().set("flat", true);
-        t->setRadioGroupId(4711);
-        addChildComponent(*t);   // shown once the Output pipeline exists
-    }
-    outputTab.setTooltip("Effects for what your apps play (system audio)");
-    inputTab.setTooltip("Effects for your microphone");
-    outputTab.onClick = [this] { switchPipeline(Pipeline::Output); };
-    inputTab.onClick  = [this] { switchPipeline(Pipeline::Input); };
-
-    // --- Toolbar: right-hand actions --------------------------------------
+    bypassBtn.getProperties().set("icon", (int)icon::power);
     bypassBtn.setClickingTogglesState(true);
-    bypassBtn.setColour(juce::TextButton::buttonOnColourId, eeval::theme::accentDanger);
     bypassBtn.setTooltip("Bypass every effect in this pipeline (A/B comparison)");
-    bypassBtn.onClick = [this] {
-        proc().setGlobalBypass(bypassBtn.getToggleState());
-    };
+    bypassBtn.onClick = [this] { proc().setGlobalBypass(bypassBtn.getToggleState()); };
     addAndMakeVisible(bypassBtn);
 
+    monitorBtn.getProperties().set("icon", (int)icon::headphones);
     monitorBtn.setClickingTogglesState(true);
-    monitorBtn.setColour(juce::TextButton::buttonOnColourId, eeval::theme::accentSuccess);
     monitorBtn.setTooltip("Temporarily send the output to your monitor device");
     monitorBtn.onClick = [this] { toggleMonitor(); };
-    addAndMakeVisible(monitorBtn);
+    if (juce::JUCEApplicationBase::isStandaloneApp())
+        addAndMakeVisible(monitorBtn);
 
-    // --- Toolbar: right --------------------------------------------------
-    menuBtn.onClick = [this] { showMainMenu(); };
-    addAndMakeVisible(menuBtn);
-
-    // --- Sidebar ---------------------------------------------------------
+    // --- Effects card -------------------------------------------------------
+    addEffectBtn.getProperties().set("accent", true);
+    addEffectBtn.getProperties().set("icon", (int)icon::add);
+    addEffectBtn.setTooltip("Add an effect to the end of the chain");
     addEffectBtn.onClick = [this] { showAddEffectMenu(); };
     addAndMakeVisible(addEffectBtn);
 
-    // Virtual Audio button - EasyEffects' own Windows devices via Synchronous Audio Router
-#if JucePlugin_Build_Standalone
-    if (juce::JUCEApplicationBase::isStandaloneApp()) {
-        addAndMakeVisible(virtualBtn);
-        virtualBtn.setColour(juce::TextButton::buttonOnColourId, eeval::theme::accentPrimary);
-        virtualBtn.onClick = [this] { showVirtualAudioMenu(); };
+    moduleList.setModel(this);
+    moduleList.setRowHeight(44);
+    moduleList.setColour(juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
+    addAndMakeVisible(moduleList);
 
-        // The standalone window isn't on the desktop yet while the editor is
-        // being constructed, so look up the plugin holder on the next message loop.
-        juce::Component::SafePointer<EasyEffectsAudioProcessorEditor> safeThis(this);
-        juce::MessageManager::callAsync([safeThis] {
-            if (safeThis != nullptr) {
-                safeThis->initPipelines();
-                safeThis->updateVirtualButton();
-            }
-        });
-    }
-#endif
+    // --- Effect page / settings pages --------------------------------------
+    viewport.setScrollBarsShown(true, false);
+    viewport.setScrollBarThickness(12);
+    addAndMakeVisible(viewport);
 
-    // Load saved monitor device from settings
-#if JucePlugin_Build_Standalone
-    if (auto* holder = juce::StandalonePluginHolder::getInstance()) {
-        if (auto* props = holder->settings.get())
-            monitorDeviceName = props->getValue("monitorDevice", "");
-    }
-#endif
-
-    // Preset name label (right side of the toolbar)
-    presetNameLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
-    presetNameLabel.setColour(juce::Label::textColourId, eeval::theme::textSecondary);
-    presetNameLabel.setJustificationType(juce::Justification::centredRight);
-    addAndMakeVisible(presetNameLabel);
+    settingsViewport.setScrollBarsShown(true, false);
+    settingsViewport.setScrollBarThickness(12);
+    addChildComponent(settingsViewport);
 
     // FFT Analyzer
     fftAnalyzer = std::make_unique<eeval::ui::SpectrumAnalyzerEditor>(proc());
     addAndMakeVisible(fftAnalyzer.get());
-
-    // Sidebar effect list
-    moduleList.setModel(this);
-    moduleList.setRowHeight(38);
-    moduleList.setColour(juce::ListBox::backgroundColourId, eeval::theme::bgSurface);
-    addAndMakeVisible(moduleList);
-
-    // Viewport
-    viewport.setScrollBarsShown(true, false);
-    viewport.setScrollBarThickness(10);
-    addAndMakeVisible(viewport);
 
     // Select first row
     int lastSelected = proc().getSelectedEditorIndex();
@@ -127,18 +105,44 @@ EasyEffectsAudioProcessorEditor::EasyEffectsAudioProcessorEditor(EasyEffectsAudi
         moduleList.selectRow(0, false, true);
 
     rebuildEditorView();
-    resized();   // setSize() above ran before the child components existed
+
+#if JucePlugin_Build_Standalone
+    if (juce::JUCEApplicationBase::isStandaloneApp()) {
+        // The standalone window isn't on the desktop yet while the editor is
+        // being constructed, so look up the plugin holder on the next message loop.
+        juce::Component::SafePointer<EasyEffectsAudioProcessorEditor> safeThis(this);
+        juce::MessageManager::callAsync([safeThis] {
+            if (safeThis == nullptr) return;
+            auto& self = *safeThis;
+            if (auto* s = self.settings()) {
+                self.monitorDeviceName = s->getValue("monitorDevice", "");
+                self.navUserCompact = s->getBoolValue("ui.navCompact", false);
+            }
+            self.applyAppTheme();          // saved theme + native title bar
+            self.initPipelines();
+            self.updateVirtualButton();
+            self.resized();
+        });
+    }
+#endif
+
+    setSize(1200, 780);
     startTimerHz(10);
 }
 
 EasyEffectsAudioProcessorEditor::~EasyEffectsAudioProcessorEditor()
 {
+    juce::Desktop::getInstance().removeDarkModeSettingListener(this);
+
     // If monitoring, restore original device before closing
     if (isMonitoring)
         toggleMonitor();
 
     stopTimer();
     // Drop every UI object that points into a pipeline before the pipelines go.
+    settingsViewport.setViewedComponent(nullptr, false);
+    devicesPage.reset();
+    settingsPage.reset();
     viewport.setViewedComponent(nullptr, false);
     currentEditor.reset();
     moduleList.setModel(nullptr);
@@ -152,7 +156,332 @@ EasyEffectsAudioProcessorEditor::~EasyEffectsAudioProcessorEditor()
     asioHost.reset();         // stop the ASIO callback before the processors it drives go away
                               // ("asio.driver" stays saved, so ASIO resumes next launch)
     outputPipeline.reset();   // saves its chain + devices
+    juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
     setLookAndFeel(nullptr);
+}
+
+// --- Settings / appearance ------------------------------------------------
+
+juce::PropertySet* EasyEffectsAudioProcessorEditor::settings() const
+{
+#if JucePlugin_Build_Standalone
+    if (juce::JUCEApplicationBase::isStandaloneApp())
+        if (auto* holder = juce::StandalonePluginHolder::getInstance())
+            return holder->settings.get();
+#endif
+    return nullptr;
+}
+
+juce::String EasyEffectsAudioProcessorEditor::themeSetting() const
+{
+    if (auto* s = settings())
+        return s->getValue("ui.theme", "system");
+    return themeFallback;
+}
+
+void EasyEffectsAudioProcessorEditor::setThemeSetting(const juce::String& v)
+{
+    if (auto* s = settings()) s->setValue("ui.theme", v);
+    themeFallback = v;
+    applyAppTheme();
+}
+
+void EasyEffectsAudioProcessorEditor::applyAppTheme()
+{
+    eeval::ui::chrome::applyTheme(themeSetting());
+    customTheme.refreshColours();
+    sendLookAndFeelChange();
+    eeval::ui::chrome::styleTopLevelWindow(*this);
+
+    // Editors read some colours when they are built: rebuild the visible one.
+    rebuildEditorView();
+    moduleList.updateContent();
+    moduleList.repaint();
+    if (devicesPage)  devicesPage->refresh();
+    if (settingsPage) settingsPage->refresh();
+    repaint();
+}
+
+void EasyEffectsAudioProcessorEditor::darkModeSettingChanged()
+{
+    if (themeSetting() == "system")
+        applyAppTheme();
+}
+
+// --- Navigation -------------------------------------------------------------
+
+void EasyEffectsAudioProcessorEditor::buildNavigation()
+{
+    std::vector<eeval::ui::NavigationPane::Item> items;
+    if (hasPipelineTabs()) {
+        items.push_back({ "output", "Output", icon::volume, false, "Effects for what your apps play (system audio)" });
+        items.push_back({ "input",  "Input",  icon::microphone, false, "Effects for your microphone" });
+        items.push_back({ "devices", "Devices", icon::devices, true, "Virtual audio, devices and audio engine" });
+    } else {
+        items.push_back({ "input", "Effects", icon::equalizer, false, "The effect chain" });
+    }
+    items.push_back({ "settings", "Settings", icon::settings, true, "Appearance and about" });
+    nav.setItems(std::move(items));
+
+    switch (currentPage) {
+        case Page::Output:   nav.setSelected("output");   break;
+        case Page::Input:    nav.setSelected("input");    break;
+        case Page::Devices:  nav.setSelected("devices");  break;
+        case Page::Settings: nav.setSelected("settings"); break;
+    }
+}
+
+void EasyEffectsAudioProcessorEditor::showPage(Page p)
+{
+    if (p == Page::Output && !hasPipelineTabs()) p = Page::Input;
+    if (p == Page::Devices && !hasPipelineTabs()) p = Page::Settings;
+
+    currentPage = p;
+    if (p == Page::Output) switchPipeline(Pipeline::Output);
+    if (p == Page::Input)  switchPipeline(Pipeline::Input);
+
+    buildNavigation();   // updates the selection
+
+    const bool pipe = isPipelinePage();
+    for (juce::Component* c : { (juce::Component*)&presetBtn, (juce::Component*)&bypassBtn,
+                                (juce::Component*)&addEffectBtn, (juce::Component*)&moduleList,
+                                (juce::Component*)&viewport })
+        c->setVisible(pipe);
+    monitorBtn.setVisible(pipe && juce::JUCEApplicationBase::isStandaloneApp());
+    if (fftAnalyzer) fftAnalyzer->setVisible(pipe);
+
+    settingsViewport.setVisible(!pipe);
+    if (!pipe) {
+        if (p == Page::Devices && devicesPage == nullptr)  buildDevicesPage();
+        if (p == Page::Settings && settingsPage == nullptr) buildSettingsPage();
+        auto* page = p == Page::Devices ? devicesPage.get() : settingsPage.get();
+        if (settingsViewport.getViewedComponent() != page) {
+            settingsViewport.setViewedComponent(page, false);
+            settingsViewport.setViewPosition(0, 0);
+        }
+        if (page) {
+            page->sendLookAndFeelChange();
+            page->refresh();
+        }
+    }
+
+    if (auto* s = settings())
+        s->setValue("ui.page", p == Page::Output ? "output" : p == Page::Input ? "input"
+                             : p == Page::Devices ? "devices" : "settings");
+    resized();
+    repaint();
+}
+
+void EasyEffectsAudioProcessorEditor::layoutSettingsViewport()
+{
+    if (auto* page = dynamic_cast<eeval::ui::SettingsPage*>(settingsViewport.getViewedComponent())) {
+        const int viewH = settingsViewport.getHeight();
+        const int wanted = page->getPreferredHeight();
+        const int w = settingsViewport.getWidth() - (wanted > viewH ? settingsViewport.getScrollBarThickness() : 0);
+        page->setSize(juce::jmax(0, w), juce::jmax(viewH, wanted));
+    }
+}
+
+// --- Devices page (replaces the Linux app's PipeWire page) -----------------
+
+bool EasyEffectsAudioProcessorEditor::sarInstalled() const
+{
+    // Enumerating ASIO drivers reads the registry: cache it for a few seconds.
+    static juce::uint32 lastCheck = 0;
+    static bool installed = false;
+    const auto now = juce::Time::getMillisecondCounter();
+    if (asioHost != nullptr && (lastCheck == 0 || now - lastCheck > 3000)) {
+        installed = asioHost->getDriverNames().contains(eeval::sar::driverName);
+        lastCheck = now;
+    }
+    return installed;
+}
+
+bool EasyEffectsAudioProcessorEditor::sarRunning() const
+{
+    return asioEnabled() && eeval::sar::isSarDriver(asioDriver) && asioHost->isOpen();
+}
+
+void EasyEffectsAudioProcessorEditor::buildDevicesPage()
+{
+    using Card = eeval::ui::SettingsCard;
+    devicesPage = std::make_unique<eeval::ui::SettingsPage>(
+        "Devices", "Where EasyEffects takes its audio from and sends it to");
+    auto& page = *devicesPage;
+    auto* self = this;
+
+    // --- Virtual audio (Synchronous Audio Router) ---------------------------
+    if (asioHost != nullptr) {
+        page.addSection("Virtual audio");
+
+        page.addCard(icon::volume, "Process system audio", [] {
+                return juce::String("Apps play to EasyEffects Speakers, then through the Output effects to your speakers");
+            })
+            .withToggle([self] { return self->sarRunning() && self->virtualOptionEnabled(true); },
+                        [self](bool on) { self->setVirtualOption(true, on); },
+                        [self] { return self->sarInstalled(); });
+
+        page.addCard(icon::microphone, "Process microphone", [] {
+                return juce::String("Your microphone goes through the Input effects to EasyEffects Microphone");
+            })
+            .withToggle([self] { return self->sarRunning() && self->virtualOptionEnabled(false); },
+                        [self](bool on) { self->setVirtualOption(false, on); },
+                        [self] { return self->sarInstalled(); });
+
+        page.addCard(icon::plug, "Synchronous Audio Router", [self] {
+                if (!self->sarInstalled())
+                    return juce::String("Not installed. It is free, signed and works with Secure Boot on.");
+                if (!self->sarRunning())
+                    return juce::String("Installed, not in use");
+                juce::String s = "Running";
+                if (self->asioHost->getBufferSize() > 0)
+                    s << middleDot() << self->asioHost->getBufferSize() << " samples";
+                if (driverNeedsElevation(self->asioDriver) && !isElevatedCached())
+                    s << middleDot() << "needs administrator rights to create its Windows devices";
+                return s;
+            })
+            .withButton([self] {
+                    if (!self->sarInstalled()) return juce::String("Download");
+                    if (self->sarRunning() && !isElevatedCached()) return juce::String("Restart as administrator");
+                    if (self->sarRunning()) return juce::String("Reconnect devices");
+                    return juce::String("How it works");
+                },
+                [self](juce::Component&) {
+                    if (!self->sarInstalled()) {
+                        juce::URL("https://github.com/eiz/SynchronousAudioRouter/releases").launchInDefaultBrowser();
+                    } else if (self->sarRunning() && !isElevatedCached()) {
+                        self->restartElevated();
+                    } else if (self->sarRunning()) {
+                        self->autoRouteSar(true);
+                        self->sarDefaultsCountdown = 80;
+                    } else {
+                        self->showVirtualAudioHelp();
+                    }
+                    self->updateVirtualButton();
+                });
+
+        page.addCard(icon::power, "Turn virtual audio off", [] {
+                return juce::String("Go back to Windows Audio and restore your previous default devices");
+            })
+            .withButton([] { return juce::String("Turn off"); },
+                        [self](juce::Component&) { self->disableAsio(); },
+                        false, false, [self] { return self->sarRunning(); });
+    }
+
+    // --- Devices of each pipeline -------------------------------------------
+    auto deviceCard = [&page, self](Pipeline p, bool inputSide, juce::juce_wchar glyph,
+                                    const juce::String& title, const juce::String& desc) {
+        page.addCard(glyph, title, [desc] { return desc; })
+            .withButton([self, p, inputSide] {
+                    return inputSide ? self->inputNameFor(p) : self->outputNameFor(p);
+                },
+                [self, p, inputSide](juce::Component& anchor) {
+                    self->showDeviceMenu(p, inputSide, anchor.getScreenBounds());
+                },
+                true);
+    };
+
+    page.addSection("Output");
+    deviceCard(Pipeline::Output, true,  icon::apps,     "Players",       "What the Output effects process: the audio your apps play");
+    deviceCard(Pipeline::Output, false, icon::speakers, "Output device", "Your speakers or headphones");
+
+    page.addSection("Input");
+    deviceCard(Pipeline::Input, true,  icon::microphone, "Input device", "Your microphone");
+    deviceCard(Pipeline::Input, false, icon::apps,       "Recorders",    "Where the processed microphone goes (pick it in Discord, OBS, Zoom)");
+
+    // --- Audio engine -------------------------------------------------------
+    page.addSection("Audio engine");
+    page.addCard(icon::sliders, "Audio engine", [] {
+            return juce::String("Windows Audio opens one device per pipeline; an ASIO driver runs both pipelines");
+        })
+        .withButton([self] { return self->asioEnabled() ? self->asioDriver : juce::String("Windows Audio"); },
+                    [self](juce::Component& anchor) { self->showEngineMenu(anchor); },
+                    true);
+
+    page.addCard(icon::settings, "Sample rate and buffer size", [self] {
+            return self->asioEnabled() ? juce::String("Set in the ASIO driver's control panel")
+                                       : juce::String("Audio settings of each pipeline");
+        })
+        .withButton([self] { return self->asioEnabled() ? juce::String("Open control panel")
+                                                         : juce::String("Open"); },
+                    [self](juce::Component& anchor) {
+                        if (self->asioEnabled()) { self->asioHost->showControlPanel(); return; }
+                        juce::PopupMenu m;
+                        m.addItem(1, "Output pipeline...");
+                        m.addItem(2, "Input pipeline...");
+                        juce::Component::SafePointer<EasyEffectsAudioProcessorEditor> safe(self);
+                        m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&anchor), [safe](int r) {
+                            if (safe == nullptr || r <= 0) return;
+                            safe->showAudioSettings(r == 1 ? Pipeline::Output : Pipeline::Input);
+                        });
+                    });
+
+    page.addCard(icon::headphones, "Monitor device", [self] {
+            return self->asioEnabled() ? juce::String("Not available with ASIO: route a pair to your monitor outputs instead")
+                                       : juce::String("Where the Monitor button sends the sound");
+        })
+        .withButton([self] { return self->monitorDeviceName.isNotEmpty() ? self->monitorDeviceName
+                                                                          : juce::String("Choose a device"); },
+                    [self](juce::Component& anchor) { self->chooseMonitorDevice(&anchor); },
+                    true, false, [self] { return !self->asioEnabled(); });
+
+}
+
+// --- Settings page -----------------------------------------------------------
+
+void EasyEffectsAudioProcessorEditor::buildSettingsPage()
+{
+    settingsPage = std::make_unique<eeval::ui::SettingsPage>("Settings");
+    auto& page = *settingsPage;
+    auto* self = this;
+
+    page.addSection("Appearance");
+    page.addCard(icon::colour, "App theme", [] {
+            return juce::String("Follow Windows, or always use the light or dark theme");
+        })
+        .withButton([self] {
+                const auto t = self->themeSetting();
+                return t == "light" ? juce::String("Light") : t == "dark" ? juce::String("Dark")
+                                                                         : juce::String("Use system setting");
+            },
+            [self](juce::Component& anchor) {
+                const auto t = self->themeSetting();
+                juce::PopupMenu m;
+                m.addItem(1, "Light", true, t == "light");
+                m.addItem(2, "Dark", true, t == "dark");
+                m.addItem(3, "Use system setting", true, t != "light" && t != "dark");
+                juce::Component::SafePointer<EasyEffectsAudioProcessorEditor> safe(self);
+                m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&anchor), [safe](int r) {
+                    if (safe == nullptr || r <= 0) return;
+                    safe->setThemeSetting(r == 1 ? "light" : r == 2 ? "dark" : "system");
+                });
+            },
+            true);
+
+    page.addCard(icon::nav, "Compact navigation", [] {
+            return juce::String("Show only icons in the navigation pane");
+        })
+        .withToggle([self] { return self->navUserCompact; },
+                    [self](bool on) {
+                        self->navUserCompact = on;
+                        if (auto* s = self->settings()) s->setValue("ui.navCompact", on);
+                        self->resized();
+                    });
+
+    page.addSection("About");
+    page.addCard(icon::info, "EasyEffects for Windows", [] {
+            return juce::String("A Windows port of EasyEffects by Wellington Wallace. Licensed under GPLv3.");
+        })
+        .withButton([] { return juce::String("Original project"); },
+                    [](juce::Component&) { juce::URL("https://github.com/wwmm/easyeffects").launchInDefaultBrowser(); });
+
+    page.addCard(icon::openLink, "Synchronous Audio Router", [] {
+            return juce::String("Free virtual audio devices used by Devices > Virtual audio");
+        })
+        .withButton([] { return juce::String("Open website"); },
+                    [](juce::Component&) {
+                        juce::URL("https://github.com/eiz/SynchronousAudioRouter").launchInDefaultBrowser();
+                    });
 }
 
 // --- Output / Input pipelines --------------------------------------------
@@ -169,9 +498,6 @@ void EasyEffectsAudioProcessorEditor::initPipelines()
 
     outputPipeline = std::make_unique<eeval::SecondaryPipeline>(holder->settings.get(), "outputPipeline");
 
-    outputTab.setVisible(true);
-    inputTab.setVisible(true);
-
     // ASIO engine: one driver (e.g. Synchronous Audio Router) for both pipelines.
     asioHost = std::make_unique<eeval::AsioHost>(outputPipeline->processor(), hostProcessor,
                                                  holder->settings.get());
@@ -180,14 +506,20 @@ void EasyEffectsAudioProcessorEditor::initPipelines()
         asioHost->onChange = [safeThis] { if (safeThis != nullptr) safeThis->repaint(); };
     }
 
-    // Reopen the tab that was shown last time (Input on first run, where the
+    // Reopen the page that was shown last time (Input on first run, where the
     // existing chain lives).
-    Pipeline initial = Pipeline::Input;
-    if (auto* props = holder->settings.get())
+    Page initial = Page::Input;
+    Pipeline initialPipeline = Pipeline::Input;
+    if (auto* props = holder->settings.get()) {
         if (props->getValue("ui.activePipeline", "input") == "output")
-            initial = Pipeline::Output;
+            initialPipeline = Pipeline::Output;
+        const auto page = props->getValue("ui.page", initialPipeline == Pipeline::Output ? "output" : "input");
+        initial = page == "output" ? Page::Output : page == "devices" ? Page::Devices
+                : page == "settings" ? Page::Settings : Page::Input;
+    }
 
-    switchPipeline(initial);
+    switchPipeline(initialPipeline);
+    showPage(initial);
 
     if (auto* props = holder->settings.get()) {
         const auto savedDriver = props->getValue("asio.driver");
@@ -281,13 +613,13 @@ void EasyEffectsAudioProcessorEditor::enableAsio(const juce::String& driver)
         if (asioHost->isOpen())
             juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "ASIO",
                 "\"" + driver + "\" is running, but a Windows Audio device could not be started:\n\n" + err +
-                "\n\nPick another device under the Input tab's \"Input device\" row or the "
-                "Output tab's \"Output device\" row.");
+                "\n\nPick another device under Devices > Input device or Devices > Output device.");
         else
             juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "ASIO",
                 "Couldn't start \"" + driver + "\":\n" + err +
                 "\n\nIf this is Synchronous Audio Router, open its control panel "
-                "(menu > ASIO control panel) and choose your audio interface (e.g. FLOW ASIO Driver) as the hardware.");
+                "(Devices > Sample rate and buffer size) and choose your audio interface "
+                "(e.g. FLOW ASIO Driver) as the hardware.");
     }
     updateVirtualButton();
 #else
@@ -364,7 +696,7 @@ void EasyEffectsAudioProcessorEditor::trySwitchWindowsDefaultsToSar()
         done = false;   // SAR hasn't created this device yet: try again on the next tick
     };
 
-    // Only for the options switched on in the Virtual Audio menu.
+    // Only for the options switched on in Devices > Virtual audio.
     if (virtualOptionEnabled(true))
         switchTo(Flow::Render,  eeval::sar::speakersEndpoint,   "sar.prevRenderId");
     if (virtualOptionEnabled(false))
@@ -396,6 +728,8 @@ void EasyEffectsAudioProcessorEditor::restoreWindowsDefaultsFromSar(bool render,
     if (capture) restore(Flow::Capture, eeval::sar::microphoneEndpoint, "sar.prevCaptureId");
     if (auto* f = dynamic_cast<juce::PropertiesFile*>(props))
         f->saveIfNeeded();
+#else
+    juce::ignoreUnused(render, capture);
 #endif
 }
 
@@ -453,13 +787,41 @@ void EasyEffectsAudioProcessorEditor::disableAsio()
 #endif
 }
 
-void EasyEffectsAudioProcessorEditor::showPairMenu(bool inputSide)
+void EasyEffectsAudioProcessorEditor::showEngineMenu(juce::Component& anchor)
+{
+    if (asioHost == nullptr) return;
+
+    // Audio engine: Windows Audio (one device per pipeline) or an ASIO driver
+    // such as Synchronous Audio Router (one driver runs both pipelines).
+    const auto asioDrivers = asioHost->getDriverNames();
+    juce::PopupMenu menu;
+    menu.addItem(10, "Windows Audio", true, !asioEnabled());
+    if (!asioDrivers.isEmpty()) {
+        menu.addSectionHeader("ASIO");
+        for (int i = 0; i < asioDrivers.size(); ++i)
+            menu.addItem(100 + i, asioDrivers[i], true, asioEnabled() && asioDrivers[i] == asioDriver);
+    }
+
+    juce::Component::SafePointer<EasyEffectsAudioProcessorEditor> safeThis(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&anchor),
+        [safeThis, asioDrivers](int result) {
+            if (safeThis == nullptr) return;
+            if (result == 10) {
+                if (safeThis->asioEnabled()) safeThis->disableAsio();
+            } else if (result >= 100 && result - 100 < asioDrivers.size()) {
+                safeThis->enableAsio(asioDrivers[result - 100]);
+            }
+            safeThis->updateVirtualButton();
+        });
+}
+
+void EasyEffectsAudioProcessorEditor::showPairMenu(Pipeline p, bool inputSide, juce::Rectangle<int> screenArea)
 {
     using InputSource  = eeval::AsioHost::InputSource;
     using OutputTarget = eeval::AsioHost::OutputTarget;
     if (asioHost == nullptr) return;
 
-    const int pipe = activePipelineIndex();
+    const int pipe = pipelineIndexFor(p);
     const auto pairs = asioHost->getPairNames(inputSide);
     const int current = asioHost->getRoute(pipe, inputSide);
     const bool windowsSource = inputSide && asioHost->getInputSource(pipe) == InputSource::WindowsAudio;
@@ -509,8 +871,7 @@ void EasyEffectsAudioProcessorEditor::showPairMenu(bool inputSide)
     menu.addItem(2000, "Open " + asioDriver + " control panel...");
 
     juce::Component::SafePointer<EasyEffectsAudioProcessorEditor> safeThis(this);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
-                           localAreaToGlobal(inputSide ? sourceRowArea : sinkRowArea)),
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(screenArea),
         [safeThis, pipe, inputSide, windowsInputs, windowsOutputs](int r) {
             if (safeThis == nullptr || safeThis->asioHost == nullptr || r <= 0) return;
             auto& host = *safeThis->asioHost;
@@ -542,9 +903,8 @@ void EasyEffectsAudioProcessorEditor::showPairMenu(bool inputSide)
             if (error.isNotEmpty())
                 juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
                                                        title, error);
+            if (safeThis->devicesPage) safeThis->devicesPage->refresh();
             safeThis->repaint();
-            safeThis->repaint(safeThis->sourceRowArea);
-            safeThis->repaint(safeThis->sinkRowArea);
         });
 }
 
@@ -555,9 +915,6 @@ void EasyEffectsAudioProcessorEditor::switchPipeline(Pipeline p)
         if (outputPipeline == nullptr) return;
         target = &outputPipeline->processor();
     }
-
-    outputTab.setToggleState(p == Pipeline::Output, juce::dontSendNotification);
-    inputTab.setToggleState(p == Pipeline::Input, juce::dontSendNotification);
 
     if (target == activeProc && p == activePipeline && fftAnalyzer != nullptr && currentEditor != nullptr) {
         repaint();
@@ -573,39 +930,38 @@ void EasyEffectsAudioProcessorEditor::switchPipeline(Pipeline p)
     activeProc = target;
 
     fftAnalyzer = std::make_unique<eeval::ui::SpectrumAnalyzerEditor>(proc());
-    addAndMakeVisible(fftAnalyzer.get());
+    addChildComponent(fftAnalyzer.get());
+    fftAnalyzer->setVisible(isPipelinePage());
 
     bypassBtn.setToggleState(proc().getGlobalBypass(), juce::dontSendNotification);
 
-#if JucePlugin_Build_Standalone
-    if (auto* holder = juce::StandalonePluginHolder::getInstance())
-        if (auto* props = holder->settings.get())
-            props->setValue("ui.activePipeline", p == Pipeline::Output ? "output" : "input");
-#endif
+    if (auto* props = settings())
+        props->setValue("ui.activePipeline", p == Pipeline::Output ? "output" : "input");
 
     refreshSidebar();   // rebuilds rows + effect page for the new chain
     resized();
     repaint();
 }
 
-juce::AudioDeviceManager* EasyEffectsAudioProcessorEditor::activeDeviceManager() const
+juce::AudioDeviceManager* EasyEffectsAudioProcessorEditor::deviceManagerFor(Pipeline p) const
 {
     if (asioEnabled())
         return nullptr;   // devices are ASIO channel pairs, not Windows Audio devices
-    if (activePipeline == Pipeline::Output && outputPipeline != nullptr)
+    if (p == Pipeline::Output && outputPipeline != nullptr)
         return &outputPipeline->deviceManager();
 #if JucePlugin_Build_Standalone
-    if (auto* holder = juce::StandalonePluginHolder::getInstance())
-        return &holder->deviceManager;
+    if (p == Pipeline::Input)
+        if (auto* holder = juce::StandalonePluginHolder::getInstance())
+            return &holder->deviceManager;
 #endif
     return nullptr;
 }
 
-void EasyEffectsAudioProcessorEditor::showDeviceMenu(bool inputSide)
+void EasyEffectsAudioProcessorEditor::showDeviceMenu(Pipeline p, bool inputSide, juce::Rectangle<int> screenArea)
 {
-    if (asioEnabled()) { showPairMenu(inputSide); return; }
+    if (asioEnabled()) { showPairMenu(p, inputSide, screenArea); return; }
 
-    auto* dm = activeDeviceManager();
+    auto* dm = deviceManagerFor(p);
     if (dm == nullptr) return;
     auto* type = dm->getCurrentDeviceTypeObject();
     if (type == nullptr) return;
@@ -625,11 +981,10 @@ void EasyEffectsAudioProcessorEditor::showDeviceMenu(bool inputSide)
     menu.addItem(2000, "Audio settings...");
 
     juce::Component::SafePointer<EasyEffectsAudioProcessorEditor> safeThis(this);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
-                           localAreaToGlobal(inputSide ? sourceRowArea : sinkRowArea)),
-        [safeThis, dm, names, inputSide](int r) {
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(screenArea),
+        [safeThis, dm, names, inputSide, p](int r) {
             if (safeThis == nullptr || r <= 0) return;
-            if (r == 2000) { safeThis->showAudioSettings(); return; }
+            if (r == 2000) { safeThis->showAudioSettings(p); return; }
 
             auto s = dm->getAudioDeviceSetup();
             const juce::String chosen = (r == 1000) ? juce::String() : names[r - 1];
@@ -642,15 +997,16 @@ void EasyEffectsAudioProcessorEditor::showDeviceMenu(bool inputSide)
                                                        "Audio device", err);
             if (safeThis->outputPipeline != nullptr)
                 safeThis->outputPipeline->save();
+            if (safeThis->devicesPage) safeThis->devicesPage->refresh();
             safeThis->repaint();
         });
 }
 
-void EasyEffectsAudioProcessorEditor::showAudioSettings()
+void EasyEffectsAudioProcessorEditor::showAudioSettings(Pipeline p)
 {
     if (asioEnabled()) { asioHost->showControlPanel(); return; }   // rate/buffer live in the driver
 
-    auto* dm = activeDeviceManager();
+    auto* dm = deviceManagerFor(p);
     if (dm == nullptr) return;
 
     auto* selector = new juce::AudioDeviceSelectorComponent(*dm, 0, 2, 0, 2, false, false, true, false);
@@ -658,9 +1014,9 @@ void EasyEffectsAudioProcessorEditor::showAudioSettings()
 
     juce::DialogWindow::LaunchOptions o;
     o.content.setOwned(selector);
-    o.dialogTitle = (activePipeline == Pipeline::Output && hasPipelineTabs())
+    o.dialogTitle = (p == Pipeline::Output && hasPipelineTabs())
                         ? "Output pipeline - audio settings" : "Input pipeline - audio settings";
-    o.dialogBackgroundColour = eeval::theme::bgBase;
+    o.dialogBackgroundColour = theme::bgBase;
     o.escapeKeyTriggersCloseButton = true;
     o.useNativeTitleBar = true;
     o.resizable = false;
@@ -669,19 +1025,21 @@ void EasyEffectsAudioProcessorEditor::showAudioSettings()
 
 void EasyEffectsAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
 {
+    if (!isPipelinePage()) return;
     if (sourceRowArea.contains(e.getPosition()))
-        showDeviceMenu(true);
+        showDeviceMenu(activePipeline, true, localAreaToGlobal(sourceRowArea));
     else if (sinkRowArea.contains(e.getPosition()))
-        showDeviceMenu(false);
+        showDeviceMenu(activePipeline, false, localAreaToGlobal(sinkRowArea));
 }
 
 void EasyEffectsAudioProcessorEditor::mouseMove(const juce::MouseEvent& e)
 {
-    const int hot = sourceRowArea.contains(e.getPosition()) ? 1
+    const bool clickable = isPipelinePage() && (activeDeviceManager() != nullptr || asioEnabled());
+    const int hot = !clickable ? 0
+                  : sourceRowArea.contains(e.getPosition()) ? 1
                   : sinkRowArea.contains(e.getPosition())   ? 2 : 0;
     if (hot != hoveredEndRow) {
         hoveredEndRow = hot;
-        setMouseCursor(hot != 0 ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
         repaint(sourceRowArea);
         repaint(sinkRowArea);
     }
@@ -691,7 +1049,6 @@ void EasyEffectsAudioProcessorEditor::mouseExit(const juce::MouseEvent&)
 {
     if (hoveredEndRow != 0) {
         hoveredEndRow = 0;
-        setMouseCursor(juce::MouseCursor::NormalCursor);
         repaint(sourceRowArea);
         repaint(sinkRowArea);
     }
@@ -699,23 +1056,19 @@ void EasyEffectsAudioProcessorEditor::mouseExit(const juce::MouseEvent&)
 
 void EasyEffectsAudioProcessorEditor::timerCallback()
 {
-    // Update preset name label
+    // Preset drop-down shows the active preset
     auto& pm = proc().getPresetManager();
-    juce::String label;
-    if (pm.hasActivePreset()) {
-        label = juce::String(pm.getActivePresetName());
-        if (pm.isDirty()) label += " *";
-    } else {
-        label = "(No Preset)";
-    }
-    presetNameLabel.setText(label, juce::dontSendNotification);
+    juce::String label = pm.hasActivePreset() ? juce::String(pm.getActivePresetName()) : juce::String("No preset");
+    if (pm.hasActivePreset() && pm.isDirty()) label += " *";
+    if (presetBtn.getButtonText() != label)
+        presetBtn.setButtonText(label);
 
     // Sync bypass button
     bypassBtn.setToggleState(proc().getGlobalBypass(), juce::dontSendNotification);
 
 #if JucePlugin_Build_Standalone
     // While ASIO runs both pipelines, the Windows Audio devices must stay closed
-    // (e.g. if something re-opened one via Options > Audio Settings).
+    // (e.g. if something re-opened one via the audio settings dialog).
     if (asioEnabled()) {
         if (auto* holder = juce::StandalonePluginHolder::getInstance())
             if (holder->deviceManager.getCurrentAudioDevice() != nullptr)
@@ -735,134 +1088,41 @@ void EasyEffectsAudioProcessorEditor::timerCallback()
         outputPipeline->save();
     }
 
-    // Rows read their bypass state live; device names can change in Audio Settings.
-    moduleList.repaint();
-    repaint(sourceRowArea);
-    repaint(sinkRowArea);
-    repaint(footerArea);
+    if (isPipelinePage()) {
+        // Rows read their bypass state live; device names can change in the audio settings.
+        moduleList.repaint();
+        repaint(sourceRowArea);
+        repaint(sinkRowArea);
+        repaint(headerArea);
+    } else if (currentPage == Page::Devices && devicesPage != nullptr && saveCountdown % 5 == 0) {
+        devicesPage->refresh();
+    }
 }
 
-juce::String EasyEffectsAudioProcessorEditor::currentInputDeviceName() const
+juce::String EasyEffectsAudioProcessorEditor::inputNameFor(Pipeline p) const
 {
     if (asioEnabled())
-        return asioHost->getSourceName(activePipelineIndex());
-    if (auto* dm = activeDeviceManager()) {
+        return asioHost->getSourceName(pipelineIndexFor(p));
+    if (auto* dm = deviceManagerFor(p)) {
         auto name = dm->getAudioDeviceSetup().inputDeviceName;
         return name.isNotEmpty() ? name : juce::String("None");
     }
     return "Host input";
 }
 
-juce::String EasyEffectsAudioProcessorEditor::currentOutputDeviceName() const
+juce::String EasyEffectsAudioProcessorEditor::outputNameFor(Pipeline p) const
 {
     if (asioEnabled())
-        return asioHost->getSinkName(activePipelineIndex());
-    if (auto* dm = activeDeviceManager()) {
+        return asioHost->getSinkName(pipelineIndexFor(p));
+    if (auto* dm = deviceManagerFor(p)) {
         auto name = dm->getAudioDeviceSetup().outputDeviceName;
         return name.isNotEmpty() ? name : juce::String("None");
     }
     return "Host output";
 }
 
-void EasyEffectsAudioProcessorEditor::paint(juce::Graphics& g)
+juce::String EasyEffectsAudioProcessorEditor::engineStatus() const
 {
-    using namespace eeval;
-    g.fillAll(theme::bgBase);
-
-    // --- Toolbar ---------------------------------------------------------
-    g.setColour(theme::bgToolbar);
-    g.fillRect(0, 0, getWidth(), headerHeight);
-    g.setColour(theme::borderSubtle);
-    g.fillRect(0, headerHeight - 1, getWidth(), 1);
-
-    // Segmented group frames: centre "Output | Input", right "Bypass | Monitor | Virtual Audio"
-    auto drawGroupFrame = [&g](juce::Rectangle<int> area) {
-        if (area.isEmpty()) return;
-        auto r = area.toFloat().expanded(2.0f, 2.0f);
-        g.setColour(theme::bgSurface);
-        g.fillRoundedRectangle(r, theme::radius + 1.0f);
-        g.setColour(theme::borderSubtle);
-        g.drawRoundedRectangle(r.reduced(0.5f), theme::radius + 1.0f, 1.0f);
-    };
-    if (hasPipelineTabs())
-        drawGroupFrame(pipelineGroupArea);
-    drawGroupFrame(segmentGroupArea);
-
-    // --- Sidebar ---------------------------------------------------------
-    g.setColour(theme::bgSurface);
-    g.fillRect(sidebarArea);
-    g.setColour(theme::borderSubtle);
-    g.fillRect(sidebarArea.getRight(), sidebarArea.getY(), 1, sidebarArea.getHeight());
-
-    // Source / sink ends of the chain. Clickable: they open a device menu.
-    const bool clickable = activeDeviceManager() != nullptr || asioEnabled();
-    auto drawEndRow = [&g, clickable](juce::Rectangle<int> r, const juce::String& title,
-                                      const juce::String& device, bool hovered) {
-        if (r.isEmpty()) return;
-
-        if (hovered && clickable) {
-            g.setColour(theme::bgOverlay);
-            g.fillRoundedRectangle(r.reduced(6, 3).toFloat(), theme::radius);
-        }
-
-        auto row = r.reduced(14, 0);
-        if (clickable) {
-            // small ▾ hinting that the device can be changed
-            juce::Path chev;
-            const float x = (float)row.getRight() - 6.0f, y = (float)row.getCentreY();
-            chev.startNewSubPath(x - 4.0f, y - 2.0f); chev.lineTo(x, y + 2.0f); chev.lineTo(x + 4.0f, y - 2.0f);
-            g.setColour(hovered ? theme::textPrimary : theme::textSecondary);
-            g.strokePath(chev, juce::PathStrokeType(1.4f));
-            row.removeFromRight(16);
-        }
-
-        juce::Path arrow;
-        const float cx = (float)row.getX() + 8.0f, cy = (float)row.getCentreY();
-        arrow.startNewSubPath(cx, cy - 6.0f); arrow.lineTo(cx, cy + 5.0f);
-        arrow.startNewSubPath(cx - 4.0f, cy + 1.0f); arrow.lineTo(cx, cy + 5.0f); arrow.lineTo(cx + 4.0f, cy + 1.0f);
-        g.setColour(theme::accentPrimary);
-        g.strokePath(arrow, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        row.removeFromLeft(24);
-
-        g.setColour(theme::textPrimary);
-        g.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
-        const int titleW = juce::jmin(row.getWidth(),
-            juce::roundToInt(juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), title)) + 8);
-        g.drawText(title, row.removeFromLeft(titleW), juce::Justification::centredLeft, false);
-
-        g.setColour(theme::textSecondary);
-        g.setFont(juce::Font(juce::FontOptions(12.0f)));
-        g.drawText(device, row, juce::Justification::centredLeft, true);
-    };
-
-    // Same wording as EasyEffects: the Output pipeline is fed by the players
-    // (apps) and ends in the output device; the Input pipeline starts at the
-    // input device and ends in the recorders (Discord, OBS, ...).
-    const bool outputTabActive = hasPipelineTabs() && activePipeline == Pipeline::Output;
-    drawEndRow(sourceRowArea, outputTabActive ? "Players" : "Input device", currentInputDeviceName(), hoveredEndRow == 1);
-    drawEndRow(sinkRowArea, outputTabActive ? "Output device" : (hasPipelineTabs() ? "Recorders" : "Output device"),
-               currentOutputDeviceName(), hoveredEndRow == 2);
-
-    g.setColour(theme::borderSubtle);
-    if (!sourceRowArea.isEmpty()) g.fillRect(sourceRowArea.getX() + 10, sourceRowArea.getBottom() - 1, sourceRowArea.getWidth() - 20, 1);
-    if (!sinkRowArea.isEmpty())   g.fillRect(sinkRowArea.getX() + 10, sinkRowArea.getY(), sinkRowArea.getWidth() - 20, 1);
-
-    // --- Empty state ----------------------------------------------------
-    if (currentEditor == nullptr && !contentArea.isEmpty()) {
-        g.setColour(theme::textSecondary);
-        g.setFont(juce::Font(juce::FontOptions(16.0f)));
-        g.drawText("No effects yet", contentArea.withTrimmedBottom(24), juce::Justification::centred, false);
-        g.setFont(juce::Font(juce::FontOptions(13.0f)));
-        g.drawText("Use \"+ Add effect\" to build your chain", contentArea.withTrimmedTop(28),
-                   juce::Justification::centred, false);
-    }
-
-    // --- Status bar -----------------------------------------------------
-    g.setColour(theme::bgToolbar);
-    g.fillRect(footerArea);
-    g.setColour(theme::borderSubtle);
-    g.fillRect(footerArea.getX(), footerArea.getY(), footerArea.getWidth(), 1);
-
     double sr = proc().getSampleRate();
     if (auto* dm = activeDeviceManager())
         if (auto* device = dm->getCurrentAudioDevice())
@@ -870,106 +1130,201 @@ void EasyEffectsAudioProcessorEditor::paint(juce::Graphics& g)
     if (asioEnabled() && asioHost->getSampleRate() > 0.0)
         sr = asioHost->getSampleRate();
 
-    const auto dot   = juce::String::fromUTF8("\xc2\xb7");      // ·
-    const auto arrow = juce::String::fromUTF8("\xe2\x86\x92");  // →
-    juce::String status;
-    if (hasPipelineTabs())
-        status << (activePipeline == Pipeline::Output ? "Output" : "Input") << "   " << dot << "   ";
+    juce::String s;
+    if (sr > 0.0)
+        s << juce::String(sr / 1000.0, 1) << " kHz" << middleDot();
+
     if (asioEnabled()) {
-        status << "ASIO: " << asioDriver;
+        s << "ASIO: " << asioDriver;
         if (asioHost->isOpen() && asioHost->getBufferSize() > 0)
-            status << " (" << asioHost->getBufferSize() << " samples)";
+            s << " (" << asioHost->getBufferSize() << " samples)";
         else
-            status << " (not running)";
+            s << " (not running)";
         if (driverNeedsElevation(asioDriver) && !isElevatedCached())
-            status << " - not admin, SAR devices unavailable";
-
-        const int pipe = activePipelineIndex();
-        if (asioHost->getInputSource(pipe) == eeval::AsioHost::InputSource::WindowsAudio)
-            status << "   " << dot << "   mic "
-                   << (asioHost->isWindowsInputRunning(pipe) ? "on" : "off");
-        if (asioHost->getOutputTarget(pipe) == eeval::AsioHost::OutputTarget::WindowsAudio)
-            status << "   " << dot << "   Windows out "
-                   << (asioHost->isWindowsOutputRunning(pipe) ? "on" : "off");
-
-        status << "   " << dot << "   ";
+            s << middleDot() << "not administrator: virtual devices unavailable";
+    } else if (juce::JUCEApplicationBase::isStandaloneApp()) {
+        s << "Windows Audio";
+    } else {
+        s << "Plug-in";
     }
-    status << juce::String(sr / 1000.0, 1) << " kHz   " << dot << "   "
-           << currentInputDeviceName() << "  " << arrow << "  " << currentOutputDeviceName();
-    if (isMonitoring)
-        status << "   " << dot << "   Monitoring: " << monitorDeviceName;
 
-    g.setColour(isMonitoring ? theme::accentSuccess : theme::textSecondary);
-    g.setFont(juce::Font(juce::FontOptions(12.0f)));
-    auto statusArea = footerArea.reduced(12, 0);
-    statusArea.removeFromRight(presetNameLabel.getWidth() + 8);
-    g.drawText(status, statusArea, juce::Justification::centredLeft, true);
+    if (isMonitoring)
+        s << middleDot() << "Monitoring on " << monitorDeviceName;
+    return s;
+}
+
+juce::String EasyEffectsAudioProcessorEditor::pageSubtitle() const
+{
+    juce::String what;
+    if (!hasPipelineTabs())
+        what = juce::JUCEApplicationBase::isStandaloneApp() ? "Your audio" : "Audio from the host";
+    else
+        what = activePipeline == Pipeline::Output ? "System audio: what your apps play" : "Your microphone";
+    return what + middleDot() + engineStatus();
+}
+
+void EasyEffectsAudioProcessorEditor::paint(juce::Graphics& g)
+{
+    g.fillAll(theme::windowBg);
+
+    // --- Content layer (rounded top-left corner, like WinUI NavigationView) ---
+    {
+        auto l = layerArea.toFloat();
+        juce::Path layer;
+        layer.addRoundedRectangle(l.getX(), l.getY(), l.getWidth() + theme::cardRadius, l.getHeight() + theme::cardRadius,
+                                  theme::cardRadius, theme::cardRadius, true, false, false, false);
+        g.setColour(theme::bgBase);
+        g.fillPath(layer);
+        g.setColour(theme::borderSubtle);
+        g.strokePath(layer, juce::PathStrokeType(1.0f));
+    }
+
+    if (!isPipelinePage())
+        return;
+
+    // --- Page header -----------------------------------------------------------
+    {
+        auto h = headerArea;
+        const juce::String title = !hasPipelineTabs() ? "Effects"
+                                 : activePipeline == Pipeline::Output ? "Output" : "Input";
+        g.setColour(theme::textPrimary);
+        g.setFont(theme::title());
+        g.drawText(title, h.removeFromTop(40), juce::Justification::centredLeft, true);
+        g.setColour(isMonitoring ? theme::accentText : theme::textSecondary);
+        g.setFont(theme::body());
+        g.drawText(pageSubtitle(), h.removeFromTop(22), juce::Justification::centredLeft, true);
+    }
+
+    // --- Spectrum card -----------------------------------------------------
+    theme::fillCard(g, spectrumCard.toFloat());
+
+    // --- Effects card --------------------------------------------------------
+    theme::fillCard(g, effectsCard.toFloat());
+    {
+        auto h = effectsHeader.reduced(16, 0);
+        g.setColour(theme::textPrimary);
+        g.setFont(theme::bodyStrong());
+        g.drawText("Effects", h, juce::Justification::centredLeft, false);
+
+        int active = 0;
+        for (auto& s : activeSlots) {
+            auto* prm = proc().parameters.getRawParameterValue("slot" + std::to_string(s.slotIndex) + ".bypass");
+            if (prm == nullptr || prm->load() < 0.5f) ++active;
+        }
+        g.setColour(theme::textTertiary);
+        g.setFont(theme::caption());
+        const int labelW = juce::roundToInt(juce::GlyphArrangement::getStringWidth(theme::bodyStrong(), "Effects")) + 10;
+        if (!activeSlots.empty())
+            g.drawText(juce::String(active) + " of " + juce::String((int)activeSlots.size()) + " on",
+                       h.withTrimmedLeft(labelW), juce::Justification::centredLeft, false);
+    }
+
+    // Source / sink ends of the chain. Clickable: they open a device menu.
+    const bool clickable = activeDeviceManager() != nullptr || asioEnabled();
+    auto drawEndRow = [&g, clickable](juce::Rectangle<int> r, juce::juce_wchar glyph, const juce::String& title,
+                                      const juce::String& device, bool hovered) {
+        if (r.isEmpty()) return;
+        if (hovered && clickable) {
+            g.setColour(theme::subtleFill);
+            g.fillRoundedRectangle(r.reduced(4, 4).toFloat(), theme::radius);
+        }
+        auto row = r.reduced(16, 0);
+        theme::drawIcon(g, glyph, row.removeFromLeft(20).toFloat(), theme::textSecondary, 16.0f);
+        row.removeFromLeft(14);
+        if (clickable) {
+            theme::drawIcon(g, icon::chevronDown, row.removeFromRight(16).toFloat(),
+                            hovered ? theme::textPrimary : theme::textSecondary, 10.0f);
+            row.removeFromRight(8);
+        }
+        auto block = row.withSizeKeepingCentre(row.getWidth(), 36);
+        g.setColour(theme::textSecondary);
+        g.setFont(theme::caption());
+        g.drawText(title, block.removeFromTop(16), juce::Justification::centredLeft, true);
+        g.setColour(theme::textPrimary);
+        g.setFont(theme::body());
+        g.drawText(device, block, juce::Justification::centredLeft, true);
+    };
+
+    // Same wording as EasyEffects: the Output pipeline is fed by the players
+    // (apps) and ends in the output device; the Input pipeline starts at the
+    // input device and ends in the recorders (Discord, OBS, ...).
+    const bool outputTabActive = hasPipelineTabs() && activePipeline == Pipeline::Output;
+    drawEndRow(sourceRowArea, outputTabActive ? icon::apps : icon::microphone,
+               outputTabActive ? "Players" : "Input device", currentInputDeviceName(), hoveredEndRow == 1);
+    drawEndRow(sinkRowArea, outputTabActive ? icon::speakers : icon::apps,
+               outputTabActive ? "Output device" : (hasPipelineTabs() ? "Recorders" : "Output device"),
+               currentOutputDeviceName(), hoveredEndRow == 2);
+
+    g.setColour(theme::divider);
+    if (!sourceRowArea.isEmpty()) g.fillRect(sourceRowArea.getX() + 1, sourceRowArea.getBottom(), sourceRowArea.getWidth() - 2, 1);
+    if (!sinkRowArea.isEmpty())   g.fillRect(sinkRowArea.getX() + 1, sinkRowArea.getY() - 1, sinkRowArea.getWidth() - 2, 1);
+    if (!effectsHeader.isEmpty()) g.fillRect(effectsHeader.getX() + 1, effectsHeader.getBottom(), effectsHeader.getWidth() - 2, 1);
+
+    // --- Empty state -----------------------------------------------------------
+    if (currentEditor == nullptr && !contentArea.isEmpty()) {
+        auto c = contentArea.withSizeKeepingCentre(juce::jmin(contentArea.getWidth(), 420), 140);
+        theme::drawIcon(g, icon::equalizer, c.removeFromTop(56).toFloat(), theme::textTertiary, 40.0f);
+        g.setColour(theme::textPrimary);
+        g.setFont(theme::subtitle());
+        g.drawText("No effects yet", c.removeFromTop(32), juce::Justification::centred, false);
+        g.setColour(theme::textSecondary);
+        g.setFont(theme::body());
+        g.drawText("Select Add to build your chain", c.removeFromTop(22), juce::Justification::centred, false);
+    }
 }
 
 void EasyEffectsAudioProcessorEditor::resized()
 {
     auto area = getLocalBounds();
 
-    // --- Toolbar ---------------------------------------------------------
-    auto header = area.removeFromTop(headerHeight).reduced(8, 7);
+    // --- Navigation pane -------------------------------------------------------
+    const bool compact = navUserCompact || getWidth() < 1000;
+    nav.setCompact(compact);
+    nav.setBounds(area.removeFromLeft(compact ? eeval::ui::NavigationPane::compactWidth
+                                              : eeval::ui::NavigationPane::expandedWidth));
+    layerArea = area;
 
-    effectsTab.setBounds(header.removeFromLeft(84));
-    header.removeFromLeft(4);
-    presetBtn.setBounds(header.removeFromLeft(84));
+    // --- Devices / Settings pages ------------------------------------------
+    settingsViewport.setBounds(layerArea.withTrimmedLeft(1).withTrimmedTop(1));
+    layoutSettingsViewport();
 
-    menuBtn.setBounds(header.removeFromRight(36));
-    header.removeFromRight(10);
+    // --- Pipeline page ----------------------------------------------------------
+    auto page = layerArea.reduced(pagePadding, 0);
+    page.removeFromTop(16);
+    page.removeFromBottom(pagePadding);
 
-    // Right: Bypass | Monitor | Virtual Audio
-    // (isVisible() isn't usable here: setSize() runs resized() before the button is added)
-    const bool standalone = juce::JUCEApplicationBase::isStandaloneApp();
-    const int groupWidth = 80 + 80 + (standalone ? 118 : 0);
-    segmentGroupArea = header.removeFromRight(groupWidth).withSizeKeepingCentre(groupWidth, header.getHeight() - 4);
+    headerArea = page.removeFromTop(headerHeight - 14);
     {
-        auto g = segmentGroupArea;
-        bypassBtn.setBounds(g.removeFromLeft(80));
-        monitorBtn.setBounds(g.removeFromLeft(80));
-        if (standalone)
-            virtualBtn.setBounds(g);
+        auto bar = headerArea.withHeight(40).withSizeKeepingCentre(headerArea.getWidth(), 32);
+        bar = bar.withY(headerArea.getY() + 4);
+        if (monitorBtn.isVisible() || juce::JUCEApplicationBase::isStandaloneApp()) {
+            monitorBtn.setBounds(bar.removeFromRight(124));
+            bar.removeFromRight(8);
+        }
+        bypassBtn.setBounds(bar.removeFromRight(118));
+        bar.removeFromRight(8);
+        presetBtn.setBounds(bar.removeFromRight(juce::jlimit(140, 240, bar.getWidth() - 160)));
     }
+    page.removeFromTop(14);
 
-    // Centre: Output | Input (EasyEffects' pipeline switcher), centred in the window
-    {
-        const int w = 84 * 2;
-        auto centred = juce::Rectangle<int>(0, header.getY(), getWidth(), header.getHeight())
-                           .withSizeKeepingCentre(w, header.getHeight() - 4);
-        // keep clear of the left tabs / right group on narrow windows
-        if (centred.getX() < header.getX() + 8)          centred.setX(header.getX() + 8);
-        if (centred.getRight() > header.getRight() - 8)  centred.setX(header.getRight() - 8 - w);
-        pipelineGroupArea = centred;
-        auto g = pipelineGroupArea;
-        outputTab.setBounds(g.removeFromLeft(84));
-        inputTab.setBounds(g);
-    }
-
-    // --- Status bar (preset name on the right) ---------------------------
-    footerArea = area.removeFromBottom(footerHeight);
-    presetNameLabel.setBounds(footerArea.reduced(12, 1).removeFromRight(260));
-
-    // --- Spectrum (full width) -------------------------------------------
-    // Always reserve the space, even on the first call (before the analyzer exists).
-    auto spectrumArea = area.removeFromTop(fftHeight);
+    spectrumCard = page.removeFromTop(fftHeight);
     if (fftAnalyzer)
-        fftAnalyzer->setBounds(spectrumArea);
+        fftAnalyzer->setBounds(spectrumCard.reduced(10, 8));
+    page.removeFromTop(16);
 
-    // --- Sidebar ---------------------------------------------------------
-    sidebarArea = area.removeFromLeft(sidebarWidth);
-    auto side = sidebarArea;
-    addEffectBtn.setBounds(side.removeFromTop(sidebarHeaderHeight).reduced(10, 7));
-    sourceRowArea = side.removeFromTop(endRowHeight);
-    sinkRowArea = side.removeFromBottom(endRowHeight);
-    moduleList.setBounds(side.reduced(0, 4));
+    effectsCard = page.removeFromLeft(juce::jmin(effectsCardWidth, page.getWidth() / 3 + 40));
+    {
+        auto inner = effectsCard.reduced(1);
+        effectsHeader = inner.removeFromTop(effectsHeaderHeight);
+        addEffectBtn.setBounds(effectsHeader.reduced(12, 0).removeFromRight(84).withSizeKeepingCentre(84, 32));
+        sourceRowArea = inner.removeFromTop(endRowHeight);
+        sinkRowArea = inner.removeFromBottom(endRowHeight);
+        moduleList.setBounds(inner.reduced(0, 4));
+    }
 
-    area.removeFromLeft(1); // separator line
-
-    // --- Main content ----------------------------------------------------
-    contentArea = area;
-    viewport.setBounds(area);
+    page.removeFromLeft(6);   // effect editors carry their own padding
+    contentArea = page;
+    viewport.setBounds(page.withTrimmedTop(-10));
     layoutCurrentEditor();
 }
 
@@ -1004,11 +1359,11 @@ void EasyEffectsAudioProcessorEditor::toggleMonitor()
         if (monitorDeviceName.isEmpty()) {
             // Prompt user to choose a monitor device
             juce::PopupMenu menu;
-            menu.addSectionHeader("Choose Monitor Output Device:");
+            menu.addSectionHeader("Choose a monitor output device");
 
             auto* currentDevice = dm.getCurrentAudioDevice();
             auto* deviceType = currentDevice ? dm.getCurrentDeviceTypeObject() : nullptr;
-            
+
             juce::StringArray outputDevices;
             if (deviceType)
                 outputDevices = deviceType->getDeviceNames(false);
@@ -1020,12 +1375,8 @@ void EasyEffectsAudioProcessorEditor::toggleMonitor()
                 [this, outputDevices](int result) {
                     if (result > 0) {
                         monitorDeviceName = outputDevices[result - 1];
-                        // Save to settings
-                    #if JucePlugin_Build_Standalone
-                        if (auto* h = juce::StandalonePluginHolder::getInstance())
-                            if (auto* props = h->settings.get())
-                                props->setValue("monitorDevice", monitorDeviceName);
-                    #endif
+                        if (auto* props = settings())
+                            props->setValue("monitorDevice", monitorDeviceName);
                         // Now actually toggle
                         monitorBtn.setToggleState(true, juce::dontSendNotification);
                         toggleMonitor();
@@ -1055,13 +1406,14 @@ void EasyEffectsAudioProcessorEditor::toggleMonitor()
         monitoredDeviceManager = nullptr;
         isMonitoring = false;
     }
+    monitorBtn.setToggleState(isMonitoring, juce::dontSendNotification);
     repaint();
 #endif
 }
 
 // --- Virtual Audio (Synchronous Audio Router) ------------------------------
 //
-// The "Virtual Audio" button: EasyEffects' own Windows devices, provided by
+// Devices > Virtual audio: EasyEffects' own Windows devices, provided by
 // Synchronous Audio Router (SAR) while EasyEffects hosts it.
 //   Process system audio  -> Windows default playback  = "EasyEffects Speakers"
 //   Process microphone    -> Windows default recording = "EasyEffects Microphone"
@@ -1069,11 +1421,8 @@ void EasyEffectsAudioProcessorEditor::toggleMonitor()
 
 bool EasyEffectsAudioProcessorEditor::virtualOptionEnabled(bool output) const
 {
-#if JucePlugin_Build_Standalone
-    if (auto* holder = juce::StandalonePluginHolder::getInstance())
-        if (auto* props = holder->settings.get())
-            return props->getBoolValue(output ? "virtual.output" : "virtual.input", true);
-#endif
+    if (auto* props = settings())
+        return props->getBoolValue(output ? "virtual.output" : "virtual.input", true);
     juce::ignoreUnused(output);
     return false;
 }
@@ -1081,11 +1430,10 @@ bool EasyEffectsAudioProcessorEditor::virtualOptionEnabled(bool output) const
 void EasyEffectsAudioProcessorEditor::setVirtualOption(bool output, bool enabled)
 {
 #if JucePlugin_Build_Standalone
-    auto* holder = juce::StandalonePluginHolder::getInstance();
-    if (holder == nullptr || asioHost == nullptr)
+    auto* props = settings();
+    if (props == nullptr || asioHost == nullptr)
         return;
-    if (auto* props = holder->settings.get())
-        props->setValue(output ? "virtual.output" : "virtual.input", enabled);
+    props->setValue(output ? "virtual.output" : "virtual.input", enabled);
 
     if (enabled) {
         // Needs SAR as the engine; switching to it also creates + wires the devices.
@@ -1104,75 +1452,23 @@ void EasyEffectsAudioProcessorEditor::setVirtualOption(bool output, bool enabled
 
 void EasyEffectsAudioProcessorEditor::updateVirtualButton()
 {
-    const bool sarOn = asioEnabled() && eeval::sar::isSarDriver(asioDriver);
-    const bool out = sarOn && virtualOptionEnabled(true);
-    const bool in  = sarOn && virtualOptionEnabled(false);
-
-    virtualBtn.setToggleState(out || in, juce::dontSendNotification);
-    virtualBtn.setButtonText(out && in ? "Virtual: Both"
-                           : out       ? "Virtual: System"
-                           : in        ? "Virtual: Mic"
-                                       : "Virtual Audio");
+    if (devicesPage) devicesPage->refresh();
     repaint();
 }
 
-void EasyEffectsAudioProcessorEditor::showVirtualAudioMenu()
+void EasyEffectsAudioProcessorEditor::showVirtualAudioHelp()
 {
-#if JucePlugin_Build_Standalone
-    if (asioHost == nullptr)
-        return;
-
-    const bool installed = asioHost->getDriverNames().contains(eeval::sar::driverName);
-    const bool sarOn = asioEnabled() && eeval::sar::isSarDriver(asioDriver);
-
-    juce::PopupMenu menu;
-    menu.addSectionHeader(installed ? "Virtual audio (Synchronous Audio Router)"
-                                    : "Synchronous Audio Router is not installed");
-    menu.addItem(1, "Process system audio  (EasyEffects Speakers)", installed,
-                 sarOn && virtualOptionEnabled(true));
-    menu.addItem(2, "Process microphone  (EasyEffects Microphone)", installed,
-                 sarOn && virtualOptionEnabled(false));
-    menu.addSeparator();
-    menu.addItem(3, "Connect both tabs to the EasyEffects devices", sarOn);
-    menu.addItem(4, "Turn virtual audio off (use Windows Audio)", sarOn);
-    menu.addSeparator();
-    menu.addItem(5, installed ? "How it works..." : "Get Synchronous Audio Router...");
-
-    juce::Component::SafePointer<EasyEffectsAudioProcessorEditor> safeThis(this);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&virtualBtn),
-        [safeThis, installed, sarOn](int result) {
-            if (safeThis == nullptr || result <= 0)
-                return;
-            auto& self = *safeThis;
-
-            if (result == 1 || result == 2) {
-                const bool output = (result == 1);
-                const bool currentlyOn = sarOn && self.virtualOptionEnabled(output);
-                self.setVirtualOption(output, !currentlyOn);
-            } else if (result == 3) {
-                self.autoRouteSar(true);
-                self.sarDefaultsCountdown = 80;
-            } else if (result == 4) {
-                self.disableAsio();
-            } else if (result == 5) {
-                if (!installed) {
-                    juce::URL("https://github.com/eiz/SynchronousAudioRouter/releases").launchInDefaultBrowser();
-                    return;
-                }
-                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon, "Virtual Audio",
-                    "EasyEffects creates its own Windows devices through Synchronous Audio Router (SAR):\n\n"
-                    "Process system audio:\n"
-                    "  apps -> EasyEffects Speakers -> Output tab effects -> your speakers/headphones\n\n"
-                    "Process microphone:\n"
-                    "  your mic -> Input tab effects -> EasyEffects Microphone (pick it in Discord/OBS/Zoom)\n\n"
-                    "The devices exist while EasyEffects is running. SAR needs EasyEffects to run as\n"
-                    "administrator (it offers to restart that way). Your previous Windows default devices\n"
-                    "are restored when you turn an option off or close EasyEffects.");
-            }
-            self.updateVirtualButton();
-        });
-#endif
+    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon, "Virtual audio",
+        "EasyEffects creates its own Windows devices through Synchronous Audio Router (SAR):\n\n"
+        "Process system audio:\n"
+        "  apps -> EasyEffects Speakers -> Output effects -> your speakers/headphones\n\n"
+        "Process microphone:\n"
+        "  your mic -> Input effects -> EasyEffects Microphone (pick it in Discord/OBS/Zoom)\n\n"
+        "The devices exist while EasyEffects is running. SAR needs EasyEffects to run as\n"
+        "administrator (it offers to restart that way). Your previous Windows default devices\n"
+        "are restored when you turn an option off or close EasyEffects.");
 }
+
 // --- ListBoxModel ---
 
 int EasyEffectsAudioProcessorEditor::getNumRows() {
@@ -1215,7 +1511,8 @@ juce::Component* EasyEffectsAudioProcessorEditor::refreshComponentForRow(int row
                 if (safeThis != nullptr)
                     safeThis->moveEffectBy(slotIdx, delta);
             });
-        }
+        },
+        [this](int slotIdx) { resetEffect(slotIdx); }
     );
 
     rowComp->update(isRowSelected);
@@ -1293,11 +1590,15 @@ void EasyEffectsAudioProcessorEditor::rebuildEditorView() {
 
     // Every effect page gets the EasyEffects Input/Output strip on top.
     currentEditor = std::make_unique<eeval::ui::EffectPage>(proc(), slot.slotIndex, std::move(inner));
+    {
+        const int slotIdx = slot.slotIndex;
+        currentEditor->setOnReset([this, slotIdx] { resetEffect(slotIdx); });
+    }
 
     viewport.setViewedComponent(currentEditor.get(), false);
     // The page's sliders were built before being attached to this window, so their
     // text boxes / spin buttons came from the default look-and-feel. Re-send it now
-    // that the page inherits our theme, so they get rebuilt with the Breeze styling.
+    // that the page inherits our theme, so they get rebuilt with the Fluent styling.
     currentEditor->sendLookAndFeelChange();
     layoutCurrentEditor();
     repaint();
@@ -1308,41 +1609,25 @@ void EasyEffectsAudioProcessorEditor::showPresetMenu() {
     juce::PopupMenu menu;
 
     menu.addItem(1, "Save" + juce::String(pm.hasActivePreset() ? " (" + pm.getActivePresetName() + ")" : ""));
-    menu.addItem(2, "Save As...");
+    menu.addItem(2, "Save as...");
     menu.addSeparator();
 
     auto list = pm.getGlobalPresetList();
-    juce::PopupMenu loadMenu;
+    if (!list.isEmpty())
+        menu.addSectionHeader("Load");
     for (int i = 0; i < list.size(); ++i)
-        loadMenu.addItem(100 + i, list[i]);
-    menu.addSubMenu("Load", loadMenu, list.size() > 0);
+        menu.addItem(100 + i, list[i], true, pm.hasActivePreset() && list[i] == juce::String(pm.getActivePresetName()));
 
     juce::PopupMenu deleteMenu;
     for (int i = 0; i < list.size(); ++i)
         deleteMenu.addItem(200 + i, list[i]);
+    menu.addSeparator();
     menu.addSubMenu("Delete", deleteMenu, list.size() > 0);
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&presetBtn),
         [this, &pm, list](int result) {
-            if (result == 1) {
-                if (pm.hasActivePreset()) {
-                    pm.saveGlobalPreset(pm.getActivePresetName());
-                } else {
-                    auto* aw = new juce::AlertWindow("Save Preset", "Enter preset name:", juce::MessageBoxIconType::NoIcon);
-                    aw->addTextEditor("name", "", "Name:");
-                    aw->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
-                    aw->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-                    aw->enterModalState(true, juce::ModalCallbackFunction::create([this, aw](int res) {
-                        if (res == 1) {
-                            auto name = aw->getTextEditorContents("name").toStdString();
-                            if (!name.empty())
-                                proc().getPresetManager().saveGlobalPreset(name);
-                        }
-                        delete aw;
-                    }));
-                }
-            } else if (result == 2) {
-                auto* aw = new juce::AlertWindow("Save Preset As", "Enter new preset name:", juce::MessageBoxIconType::NoIcon);
+            auto askName = [this](const juce::String& title) {
+                auto* aw = new juce::AlertWindow(title, "Enter a name for the preset:", juce::MessageBoxIconType::NoIcon);
                 aw->addTextEditor("name", "", "Name:");
                 aw->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
                 aw->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
@@ -1354,11 +1639,20 @@ void EasyEffectsAudioProcessorEditor::showPresetMenu() {
                     }
                     delete aw;
                 }));
+            };
+
+            if (result == 1) {
+                if (pm.hasActivePreset())
+                    pm.saveGlobalPreset(pm.getActivePresetName());
+                else
+                    askName("Save preset");
+            } else if (result == 2) {
+                askName("Save preset as");
             } else if (result >= 200 && result < 300) {
                 auto name = list[result - 200].toStdString();
                 auto opts = juce::MessageBoxOptions()
                     .withIconType(juce::MessageBoxIconType::WarningIcon)
-                    .withTitle("Delete Preset")
+                    .withTitle("Delete preset")
                     .withMessage("Delete \"" + juce::String(name) + "\"?")
                     .withButton("Delete")
                     .withButton("Cancel");
@@ -1373,69 +1667,7 @@ void EasyEffectsAudioProcessorEditor::showPresetMenu() {
         });
 }
 
-// --- main menu (top right, like EasyEffects' hamburger menu) ---
-
-void EasyEffectsAudioProcessorEditor::showMainMenu()
-{
-    juce::PopupMenu menu;
-#if JucePlugin_Build_Standalone
-    const bool standalone = juce::StandalonePluginHolder::getInstance() != nullptr;
-#else
-    const bool standalone = false;
-#endif
-    // Audio engine: Windows Audio (one device per pipeline) or an ASIO driver
-    // such as Synchronous Audio Router (one driver runs both pipelines).
-    juce::StringArray asioDrivers;
-    if (asioHost != nullptr)
-        asioDrivers = asioHost->getDriverNames();
-    juce::PopupMenu engineMenu;
-    engineMenu.addItem(10, "Windows Audio", asioHost != nullptr, !asioEnabled());
-    if (!asioDrivers.isEmpty()) {
-        engineMenu.addSectionHeader("ASIO");
-        for (int i = 0; i < asioDrivers.size(); ++i)
-            engineMenu.addItem(100 + i, asioDrivers[i], true, asioEnabled() && asioDrivers[i] == asioDriver);
-    }
-
-    menu.addSubMenu("Audio engine", engineMenu, standalone && asioHost != nullptr);
-    if (asioEnabled())
-    {
-        menu.addItem(4, "ASIO control panel (" + asioDriver + ")...");
-        if (eeval::sar::isSarDriver(asioDriver))
-            menu.addItem(6, "Connect both tabs to the EasyEffects devices");
-    }
-    else
-        menu.addItem(1, "Audio settings...", standalone);
-    menu.addItem(2, "Monitor device...", standalone && !asioEnabled());
-    menu.addSeparator();
-    menu.addItem(3, "About Easy Effects");
-
-    juce::Component::SafePointer<EasyEffectsAudioProcessorEditor> safeThis(this);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&menuBtn),
-        [safeThis, asioDrivers](int result) {
-            if (safeThis == nullptr) return;
-            if (result == 10) {
-                if (safeThis->asioEnabled()) safeThis->disableAsio();
-            } else if (result >= 100 && result - 100 < asioDrivers.size()) {
-                safeThis->enableAsio(asioDrivers[result - 100]);
-            } else if (result == 4) {
-                if (safeThis->asioHost != nullptr) safeThis->asioHost->showControlPanel();
-            } else if (result == 6) {
-                safeThis->autoRouteSar(true);
-                safeThis->sarDefaultsCountdown = 80;
-            } else if (result == 1) {
-                safeThis->showAudioSettings();   // for the pipeline on screen
-            } else if (result == 2) {
-                safeThis->chooseMonitorDevice();
-            } else if (result == 3) {
-                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon, "Easy Effects for Windows",
-                    "A Windows port of EasyEffects: a real-time chain of audio effects for your\n"
-                    "system audio or microphone.\n\n"
-                    "Inspired by EasyEffects by Wellington Wallace. Licensed under GPLv3.");
-            }
-        });
-}
-
-void EasyEffectsAudioProcessorEditor::chooseMonitorDevice()
+void EasyEffectsAudioProcessorEditor::chooseMonitorDevice(juce::Component* anchor)
 {
 #if JucePlugin_Build_Standalone
     auto* holder = juce::StandalonePluginHolder::getInstance();
@@ -1452,14 +1684,16 @@ void EasyEffectsAudioProcessorEditor::chooseMonitorDevice()
         deviceMenu.addItem(i + 1, outputDevices[i], true, outputDevices[i] == monitorDeviceName);
 
     juce::Component::SafePointer<EasyEffectsAudioProcessorEditor> safeThis(this);
-    deviceMenu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&menuBtn),
+    deviceMenu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(anchor != nullptr ? anchor : &monitorBtn),
         [safeThis, outputDevices](int r) {
             if (safeThis == nullptr || r <= 0) return;
             safeThis->monitorDeviceName = outputDevices[r - 1];
-            if (auto* h = juce::StandalonePluginHolder::getInstance())
-                if (auto* props = h->settings.get())
-                    props->setValue("monitorDevice", safeThis->monitorDeviceName);
+            if (auto* props = safeThis->settings())
+                props->setValue("monitorDevice", safeThis->monitorDeviceName);
+            if (safeThis->devicesPage) safeThis->devicesPage->refresh();
         });
+#else
+    juce::ignoreUnused(anchor);
 #endif
 }
 
@@ -1467,7 +1701,15 @@ void EasyEffectsAudioProcessorEditor::showAddEffectMenu() {
     juce::PopupMenu menu;
     const auto& types = eeval::EffectRegistry::getEffectTypes();
 
-    for (int i = 0; i < (int)types.size(); ++i)
+    // Alphabetical, like the Linux app's effect picker.
+    std::vector<int> order((size_t)types.size());
+    for (int i = 0; i < (int)types.size(); ++i) order[(size_t)i] = i;
+    std::sort(order.begin(), order.end(), [&types](int a, int b) {
+        return juce::String(types[(size_t)a].displayName).compareNatural(types[(size_t)b].displayName) < 0;
+    });
+
+    menu.addSectionHeader("Add effect");
+    for (int i : order)
         menu.addItem(i + 1, types[(size_t)i].displayName);
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&addEffectBtn),
@@ -1487,4 +1729,19 @@ void EasyEffectsAudioProcessorEditor::showAddEffectMenu() {
                 }
             }
         });
+}
+
+void EasyEffectsAudioProcessorEditor::resetEffect(int slotIndex)
+{
+    proc().resetEffect(slotIndex);
+
+    // Rebuild the open page on the next message: the request may come from a
+    // button inside it, and editors such as the EQ cache node positions.
+    juce::Component::SafePointer<EasyEffectsAudioProcessorEditor> safeThis(this);
+    juce::MessageManager::callAsync([safeThis] {
+        if (safeThis != nullptr) {
+            safeThis->rebuildEditorView();
+            safeThis->moduleList.repaint();
+        }
+    });
 }

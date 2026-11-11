@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "Theme.h"
 
 namespace eeval {
 namespace ui {
@@ -21,11 +22,11 @@ public:
         auto area = getLocalBounds().toFloat();
         
         // Background
-        g.setColour(juce::Colours::black.withAlpha(0.3f));
+        g.setColour(theme::plotBg);
         g.fillRoundedRectangle(area, 2.0f);
 
         // Fill
-        g.setColour(inverted ? juce::Colours::orange : juce::Colours::green.withAlpha(0.7f));
+        g.setColour(inverted ? theme::accentWarning : theme::accentSuccess);
         
         if (inverted) {
             // GR meter (fills from top down)

@@ -61,14 +61,14 @@ public:
             if (barH < 1.0f)
                 continue;   // silence: draw nothing, like EasyEffects
             const float x = (float)plot.getX() + (float)i * slot;
-            g.fillRect(x, (float)plot.getBottom() - barH, barW, barH);
+            g.fillRoundedRectangle(x, (float)plot.getBottom() - barH, barW, barH, juce::jmin(2.0f, barW * 0.5f));
         }
 
         // --- frequency scale ------------------------------------------------
-        g.setColour(theme::bgToolbar);
+        g.setColour(theme::spectrumBg);
         g.fillRect(scale);
-        g.setColour(theme::textSecondary);
-        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.setColour(theme::textTertiary);
+        g.setFont(theme::font(11.0f));
 
         // 11 equal steps on the log axis, exactly like EasyEffects' labels.
         constexpr int steps = 11;

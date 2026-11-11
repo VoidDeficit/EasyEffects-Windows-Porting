@@ -420,3 +420,29 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new EasyEffectsAudioProcessor();
 }
+
+void EasyEffectsAudioProcessor::resetEffect(int slotIndex) {
+    std::string typeId;
+    for (const auto& s : getActiveSlots())
+        if (s.slotIndex == slotIndex) typeId = s.typeId;
+    if (typeId.empty())
+        return;
+
+    const auto slot = eeval::EffectRegistry::slotPrefix(slotIndex) + ".";
+    const juce::String effectPrefix(slot + typeId + ".");
+
+    for (auto* p : getParameters()) {
+        auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(p);
+        if (ranged == nullptr) continue;
+        const auto id = ranged->getParameterID();
+
+        bool resetIt = id.startsWith(effectPrefix);
+        for (const auto& suffix : eeval::EffectRegistry::slotLevelFloatParams())
+            resetIt = resetIt || id == juce::String(slot + suffix);
+
+        if (resetIt)
+            ranged->setValueNotifyingHost(ranged->getDefaultValue());
+    }
+
+    getPresetManager().markDirty();
+}

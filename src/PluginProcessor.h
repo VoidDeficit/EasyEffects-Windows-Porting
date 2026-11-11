@@ -42,6 +42,10 @@ public:
     // Move an effect up or down in the chain
     void moveEffect(int slotIndex, int direction); // -1 = up, +1 = down
 
+    // Put every parameter of the effect in a slot (plus its mix and input /
+    // output gain) back to its default value. The on/off (bypass) state is kept.
+    void resetEffect(int slotIndex);
+
     // Get chain info for UI
     struct SlotInfo {
         int slotIndex;

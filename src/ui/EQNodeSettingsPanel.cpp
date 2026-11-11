@@ -45,8 +45,8 @@ EQNodeSettingsPanel::EQNodeSettingsPanel(juce::AudioProcessorValueTreeState& vts
 }
 
 void EQNodeSettingsPanel::paint(juce::Graphics& g) {
-    g.fillAll(juce::Colour(0xEE111111));
-    g.setColour(juce::Colours::white.withAlpha(0.1f));
+    g.fillAll(theme::bgToolbar);
+    g.setColour(theme::borderStrong);
     g.drawRoundedRectangle(getLocalBounds().toFloat(), 8.0f, 1.0f);
 }
 

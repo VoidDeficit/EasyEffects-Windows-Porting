@@ -75,6 +75,7 @@ target_sources(EasyEffects
     src/ui/VisualEqualizerEditor.cpp
     src/ui/ConvolverEditor.cpp
     src/ui/GenericModuleEditor.cpp
+    src/ui/WindowsChrome.cpp
     src/PresetManager.cpp
     src/audio/WindowsAudioEndpoints.cpp
     src/audio/SecondaryPipeline.cpp

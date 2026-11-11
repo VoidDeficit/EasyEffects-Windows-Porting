@@ -11,7 +11,7 @@ namespace ui {
  * The strip EasyEffects shows above every plugin:
  *
  *   Input                       Output
- *   [ 0.00 dB ▲▼] [-17] [-17]   [ 0.00 dB ▲▼] [-19] [-19]        [ Bypass ]
+ *   [ 0.00 dB +- ] [-17] [-17]   [ 0.00 dB +- ] [-19] [-19]        [ Bypass ]
  *
  * Gain spin boxes are bound to "slotN.inGain" / "slotN.outGain"; the boxes show
  * the left/right peak level (dBFS) before and after the effect.
@@ -26,7 +26,7 @@ public:
         for (auto* s : { &inGain, &outGain }) {
             s->setSliderStyle(juce::Slider::IncDecButtons);
             s->setIncDecButtonsMode(juce::Slider::incDecButtonsDraggable_Vertical);
-            s->setTextBoxStyle(juce::Slider::TextBoxLeft, false, 92, spinHeight);
+            s->setTextBoxStyle(juce::Slider::TextBoxLeft, false, 80, spinHeight);
             s->setTextValueSuffix(" dB");
             s->setNumDecimalPlacesToDisplay(2);
             addAndMakeVisible(*s);
@@ -41,17 +41,23 @@ public:
         }
 
         bypassBtn.setButtonText("Bypass");
+        bypassBtn.getProperties().set("icon", (int)theme::icon::power);
         bypassBtn.setClickingTogglesState(true);
         bypassBtn.setColour(juce::TextButton::buttonOnColourId, theme::accentDanger);
         addAndMakeVisible(bypassBtn);
         bypassAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.parameters, sp + ".bypass", bypassBtn);
+
+        resetBtn.getProperties().set("icon", (int)theme::icon::reset);
+        resetBtn.setTooltip("Reset this effect to its default settings");
+        resetBtn.onClick = [this] { if (onReset) onReset(); };
+        addAndMakeVisible(resetBtn);
 
         startTimerHz(20);
     }
 
     void paint(juce::Graphics& g) override {
         g.setColour(theme::textSecondary);
-        g.setFont(juce::Font(juce::FontOptions(13.0f)));
+        g.setFont(theme::caption());
         g.drawText("Input",  inLabel,  juce::Justification::bottomLeft, false);
         g.drawText("Output", outLabel, juce::Justification::bottomLeft, false);
 
@@ -61,7 +67,7 @@ public:
         }
 
         // Thin separator under the strip
-        g.setColour(theme::borderSubtle);
+        g.setColour(theme::divider);
         g.fillRect(0, getHeight() - 1, getWidth(), 1);
     }
 
@@ -70,7 +76,9 @@ public:
         area.removeFromBottom(4);
 
         // Same row as the spin boxes (below the 18px label + 4px gap).
-        bypassBtn.setBounds(area.removeFromRight(90).withY(area.getY() + 22).withHeight(spinHeight));
+        bypassBtn.setBounds(area.removeFromRight(112).withY(area.getY() + 22).withHeight(spinHeight));
+        area.removeFromRight(6);
+        resetBtn.setBounds(area.removeFromRight(spinHeight + 4).withY(area.getY() + 22).withHeight(spinHeight));
 
         auto layoutGroup = [this](juce::Rectangle<int> r, juce::Rectangle<int>& label,
                                   juce::Slider& spin, juce::Rectangle<int>* boxes) {
@@ -85,7 +93,7 @@ public:
 
         const int groupWidth = spinWidth + 6 + boxWidth * 2 + 4;
         auto inGroup = area.removeFromLeft(groupWidth);
-        area.removeFromLeft(36);
+        area.removeFromLeft(24);
         auto outGroup = area.removeFromLeft(groupWidth);
 
         layoutGroup(inGroup,  inLabel,  inGain,  inBoxes);
@@ -93,6 +101,8 @@ public:
     }
 
     static constexpr int preferredHeight = 66;
+
+    std::function<void()> onReset;   // set by the main window
 
 private:
     void timerCallback() override {
@@ -116,14 +126,14 @@ private:
     }
 
     static constexpr int spinHeight = 28;
-    static constexpr int spinWidth = 118;
-    static constexpr int boxWidth = 38;
+    static constexpr int spinWidth = 106;
+    static constexpr int boxWidth = 34;
 
     EasyEffectsAudioProcessor& processor;
     int slotIndex;
 
     juce::Slider inGain, outGain;
-    juce::TextButton bypassBtn;
+    juce::TextButton bypassBtn, resetBtn;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> inAttach, outAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttach;
 
@@ -148,6 +158,8 @@ public:
         addAndMakeVisible(strip);
         if (inner) addAndMakeVisible(*inner);
     }
+
+    void setOnReset(std::function<void()> f) { strip.onReset = std::move(f); }
 
     int getPreferredHeight() const {
         const int innerH = inner ? (int)inner->getProperties().getWithDefault("preferredHeight", 0) : 0;

@@ -7,12 +7,14 @@ namespace eeval {
 namespace ui {
 
 /**
- * One effect in the sidebar, styled after the EasyEffects 8 plugin list:
- *   [↓] Effect name ............................ [⋮] [⇅]
- * - click the row to open the effect
- * - ⋮ opens a menu (enable/disable, move up/down, remove)
- * - drag ⇅ up/down to reorder
- * Bypassed effects are shown dimmed with an "off" tag.
+ * One effect in the effects list, styled as a WinUI ListView item:
+ *
+ *   | Effect name ....................... [on/off] [...] [drag]
+ *
+ * - click the row to open the effect (selected: subtle fill + accent pill)
+ * - the ToggleSwitch turns the effect on/off (bypass)
+ * - the "..." button opens a menu (reset, move up/down, remove)
+ * - drag the handle up/down to reorder
  */
 class SidebarRowCustomComponent : public juce::Component {
 public:
@@ -24,11 +26,13 @@ public:
                               std::function<void(int)> onRemove = nullptr,
                               std::function<void(int)> onMoveUp = nullptr,
                               std::function<void(int)> onMoveDown = nullptr,
-                              std::function<void(int, int)> onMoveBy = nullptr)
+                              std::function<void(int, int)> onMoveBy = nullptr,
+                              std::function<void(int)> onReset = nullptr)
         : apvts(apvtsToUse), slotIndex(slotIdx), effectTypeId(typeId),
           rowNumber(rowNum), displayName(name),
           removeCallback(std::move(onRemove)), moveUpCallback(std::move(onMoveUp)),
-          moveDownCallback(std::move(onMoveDown)), moveByCallback(std::move(onMoveBy))
+          moveDownCallback(std::move(onMoveDown)), moveByCallback(std::move(onMoveBy)),
+          resetCallback(std::move(onReset))
     {
         setRepaintsOnMouseActivity(true);
     }
@@ -36,56 +40,50 @@ public:
     ~SidebarRowCustomComponent() override = default;
 
     void paint(juce::Graphics& g) override {
-        auto row = getLocalBounds().reduced(6, 2).toFloat();
+        auto row = getLocalBounds().reduced(4, 2).toFloat();
         const bool bypassed = isBypassed();
+        const bool over = isMouseOver(true);
 
-        // Background: selected = Breeze highlight, hover = subtle
+        if (isSelected || over) {
+            g.setColour(over && isMouseButtonDown() ? theme::subtleFillDown
+                        : (isSelected && over ? theme::subtleFill.withMultipliedAlpha(1.5f) : theme::subtleFill));
+            g.fillRoundedRectangle(row, theme::radius);
+        }
         if (isSelected) {
-            g.setColour(theme::accentPrimary.withAlpha(0.22f));
-            g.fillRoundedRectangle(row, theme::radius);
-            g.setColour(theme::accentPrimary.withAlpha(0.85f));
-            g.drawRoundedRectangle(row.reduced(0.5f), theme::radius, 1.0f);
-        } else if (isMouseOver(true)) {
-            g.setColour(theme::bgOverlay);
-            g.fillRoundedRectangle(row, theme::radius);
+            g.setColour(theme::accentPrimary);
+            g.fillRoundedRectangle(row.getX(), row.getCentreY() - 8.0f, 3.0f, 16.0f, 1.5f);
         }
 
         // Drag feedback: show where the row will land
         if (dragging && dragDelta != 0) {
             g.setColour(theme::accentPrimary);
             const float y = dragDelta < 0 ? row.getY() : row.getBottom() - 2.0f;
-            g.fillRect(row.getX(), y, row.getWidth(), 2.0f);
+            g.fillRoundedRectangle(row.getX(), y, row.getWidth(), 2.0f, 1.0f);
         }
 
-        auto area = getLocalBounds().reduced(6, 2);
-        area.removeFromLeft(8);
+        auto area = getLocalBounds().reduced(4, 2);
+        area.removeFromLeft(14);
 
-        // Flow arrow (↓) like EasyEffects
-        auto arrowArea = area.removeFromLeft(16).toFloat();
-        drawFlowArrow(g, arrowArea, bypassed ? theme::textDisabled : theme::textSecondary);
-        area.removeFromLeft(6);
-
-        // Right-hand controls
         auto handleArea = area.removeFromRight(handleWidth);
-        auto menuArea = area.removeFromRight(menuWidth);
-        drawMenuDots(g, menuArea.toFloat(), hotZone == Zone::menu ? theme::textPrimary : theme::textSecondary);
-        drawDragHandle(g, handleArea.toFloat(), (hotZone == Zone::handle || dragging) ? theme::textPrimary : theme::textSecondary);
+        auto menuArea   = area.removeFromRight(menuWidth);
+        auto switchArea = area.removeFromRight(switchWidth);
 
-        // "off" tag for bypassed effects
-        if (bypassed) {
-            auto tag = area.removeFromRight(30).withSizeKeepingCentre(28, 16).toFloat();
-            g.setColour(theme::bgOverlay);
-            g.fillRoundedRectangle(tag, 8.0f);
-            g.setColour(theme::textSecondary);
-            g.setFont(juce::Font(juce::FontOptions(11.0f)));
-            g.drawText("off", tag, juce::Justification::centred, false);
-            area.removeFromRight(4);
+        if (over || dragging)
+            theme::drawIcon(g, theme::icon::gripper, handleArea.toFloat(),
+                            (hotZone == Zone::handle || dragging) ? theme::textPrimary : theme::textTertiary, 14.0f);
+
+        if (hotZone == Zone::menu) {
+            g.setColour(theme::subtleFill);
+            g.fillRoundedRectangle(menuArea.toFloat().withSizeKeepingCentre(28.0f, 28.0f), theme::radius);
         }
+        theme::drawIcon(g, theme::icon::more, menuArea.toFloat(),
+                        hotZone == Zone::menu ? theme::textPrimary : theme::textSecondary, 14.0f);
 
-        // Name
-        g.setColour(bypassed ? theme::textDisabled
-                             : (isSelected ? theme::textPrimary : theme::textPrimary.withAlpha(0.9f)));
-        g.setFont(juce::Font(juce::FontOptions(14.0f)));
+        theme::drawSwitch(g, switchArea.toFloat(), !bypassed, hotZone == Zone::toggle);
+
+        area.removeFromRight(6);
+        g.setColour(bypassed ? theme::textDisabled : theme::textPrimary);
+        g.setFont(isSelected ? theme::bodyStrong() : theme::body());
         g.drawText(displayName, area, juce::Justification::centredLeft, true);
     }
 
@@ -105,6 +103,11 @@ public:
         switch (zoneAt(e.x)) {
             case Zone::menu:
                 showRowMenu();
+                return;
+            case Zone::toggle:
+                if (auto* p = apvts.getParameter("slot" + std::to_string(slotIndex) + ".bypass"))
+                    p->setValueNotifyingHost(p->getValue() > 0.5f ? 0.0f : 1.0f);
+                repaint();
                 return;
             case Zone::handle:
                 dragging = true;
@@ -149,15 +152,17 @@ public:
     int getRowNumber() const { return rowNumber; }
 
 private:
-    enum class Zone { none, body, menu, handle };
+    enum class Zone { none, body, toggle, menu, handle };
 
-    static constexpr int menuWidth = 26;
+    static constexpr int switchWidth = 48;
+    static constexpr int menuWidth = 32;
     static constexpr int handleWidth = 26;
 
     Zone zoneAt(int x) const {
-        const int right = getWidth() - 6;
+        const int right = getWidth() - 4;
         if (x >= right - handleWidth) return Zone::handle;
         if (x >= right - handleWidth - menuWidth) return Zone::menu;
+        if (x >= right - handleWidth - menuWidth - switchWidth) return Zone::toggle;
         return Zone::body;
     }
 
@@ -170,21 +175,22 @@ private:
         const bool bypassed = isBypassed();
 
         juce::PopupMenu menu;
-        menu.addItem(1, bypassed ? "Enable" : "Disable (bypass)");
+        menu.addItem(1, bypassed ? "Turn on" : "Turn off (bypass)");
+        menu.addItem(5, "Reset to defaults", resetCallback != nullptr);
         menu.addSeparator();
-        menu.addItem(2, "Move up");
+        menu.addItem(2, "Move up", rowNumber > 0);
         menu.addItem(3, "Move down");
         menu.addSeparator();
-        menu.addItem(4, "Remove");
+        menu.addItem(4, "Remove", true, false);
 
         // Copy everything the callback needs: the row may be rebuilt meanwhile.
         auto& vts = apvts;
         const int slot = slotIndex;
-        auto onUp = moveUpCallback, onDown = moveDownCallback, onRemove = removeCallback;
+        auto onUp = moveUpCallback, onDown = moveDownCallback, onRemove = removeCallback, onReset = resetCallback;
         juce::Component::SafePointer<SidebarRowCustomComponent> safeThis(this);
 
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
-            [&vts, slot, onUp, onDown, onRemove, safeThis](int result) {
+            [&vts, slot, onUp, onDown, onRemove, onReset, safeThis](int result) {
                 if (result == 1) {
                     if (auto* p = vts.getParameter("slot" + std::to_string(slot) + ".bypass"))
                         p->setValueNotifyingHost(p->getValue() > 0.5f ? 0.0f : 1.0f);
@@ -193,40 +199,12 @@ private:
                     onUp(slot);
                 } else if (result == 3 && onDown) {
                     onDown(slot);
+                } else if (result == 5 && onReset) {
+                    onReset(slot);
                 } else if (result == 4 && onRemove) {
                     onRemove(slot);
                 }
             });
-    }
-
-    static void drawFlowArrow(juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c) {
-        const float cx = r.getCentreX(), cy = r.getCentreY();
-        juce::Path p;
-        p.startNewSubPath(cx, cy - 6.0f);
-        p.lineTo(cx, cy + 5.0f);
-        p.startNewSubPath(cx - 4.0f, cy + 1.0f);
-        p.lineTo(cx, cy + 5.0f);
-        p.lineTo(cx + 4.0f, cy + 1.0f);
-        g.setColour(c);
-        g.strokePath(p, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    }
-
-    static void drawMenuDots(juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c) {
-        const float cx = r.getCentreX(), cy = r.getCentreY();
-        g.setColour(c);
-        for (int i = -1; i <= 1; ++i)
-            g.fillEllipse(cx - 1.6f, cy + (float)i * 5.0f - 1.6f, 3.2f, 3.2f);
-    }
-
-    static void drawDragHandle(juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c) {
-        const float cx = r.getCentreX(), cy = r.getCentreY();
-        juce::Path p;
-        // up chevron
-        p.startNewSubPath(cx - 4.0f, cy - 3.0f); p.lineTo(cx, cy - 7.0f); p.lineTo(cx + 4.0f, cy - 3.0f);
-        // down chevron
-        p.startNewSubPath(cx - 4.0f, cy + 3.0f); p.lineTo(cx, cy + 7.0f); p.lineTo(cx + 4.0f, cy + 3.0f);
-        g.setColour(c);
-        g.strokePath(p, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 
     juce::AudioProcessorValueTreeState& apvts;
@@ -244,6 +222,7 @@ private:
     std::function<void(int)> moveUpCallback;
     std::function<void(int)> moveDownCallback;
     std::function<void(int, int)> moveByCallback;
+    std::function<void(int)> resetCallback;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SidebarRowCustomComponent)
 };
