@@ -1458,6 +1458,11 @@ void EasyEffectsAudioProcessorEditor::resized()
     contentArea = page;
     viewport.setBounds(page.withTrimmedTop(-10));
     layoutCurrentEditor();
+
+    // The cards, header and content layer are painted by this component; when
+    // the layout changes without a window resize (compact navigation, page
+    // switch), Windows does not repaint them, which left stale copies behind.
+    repaint();
 }
 
 void EasyEffectsAudioProcessorEditor::layoutCurrentEditor()
