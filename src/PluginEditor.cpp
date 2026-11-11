@@ -347,14 +347,16 @@ void EasyEffectsAudioProcessorEditor::trySwitchWindowsDefaultsToSar()
         const juce::String ours(endpointName);
         auto isOurs = [&ours](const std::string& n) { return juce::String::fromUTF8(n.c_str()).startsWith(ours); };
 
+        // getDefaultEndpoint() only reports the console role, so even when that
+        // is already ours, set all roles (console, multimedia, communications):
+        // Discord/Zoom often follow the *communications* default.
         auto current = getDefaultEndpoint(flow);
-        if (current && isOurs(current->name))
-            return;   // already ours
+        const bool alreadyOurs = current && isOurs(current->name);
 
         for (const auto& ep : listEndpoints(flow)) {
             if (!isOurs(ep.name)) continue;
             // Remember the user's device so it can be restored later.
-            if (current && !props->containsKey(prevKey))
+            if (current && !alreadyOurs && !props->containsKey(prevKey))
                 props->setValue(prevKey, juce::String::fromUTF8(current->id.c_str()));
             setDefaultEndpoint(ep.id);
             return;
