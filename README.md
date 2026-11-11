@@ -50,12 +50,12 @@ EasyEffects hosts [Synchronous Audio Router](https://github.com/eiz/SynchronousA
 | **EasyEffects Microphone** | Recording | your mic → **Input** tab effects → Discord / OBS / Zoom |
 
 1. Install SAR once (it is signed and works with Secure Boot on). You do **not** need to configure it.
-2. In EasyEffects, click **Virtual Audio** (top right) and turn on **Process system audio** and/or **Process microphone**. EasyEffects then:
+2. In EasyEffects, open the **Devices** page and turn on **Process system audio** and/or **Process microphone**. EasyEffects then:
    - writes SAR's configuration (your audio interface's ASIO driver as the hardware, plus the two EasyEffects devices);
    - starts SAR and wires both tabs to the new devices;
    - makes **EasyEffects Speakers** / **EasyEffects Microphone** the Windows default devices.
 3. SAR only creates Windows devices for a host running **as administrator**, so EasyEffects offers to restart itself that way.
-4. Turning an option off, choosing **Turn virtual audio off**, or closing EasyEffects restores your previous Windows default devices. The devices exist only while EasyEffects is running.
+4. Turning an option off, choosing **Turn virtual audio off** (Devices page), or closing EasyEffects restores your previous Windows default devices. The devices exist only while EasyEffects is running.
 
 Your audio interface needs an ASIO driver (most USB interfaces and mixers ship one, e.g. the FLOW 8's *FLOW ASIO Driver*).
 
@@ -71,7 +71,7 @@ own driver, ...) and use Windows Audio for the other end of each pipeline:
 | **Input** (mic) | Windows Audio microphone | ASIO output pair | Windows mic → effects → virtual mic in your ASIO driver |
 | **Output** (system) | ASIO input pair | Windows Audio output device | Apps/ASIO players → effects → real speakers/headphones |
 
-1. → **Audio engine** → pick your ASIO driver. (ASIO is single-client, so
+1. **Devices** → **Audio engine** → pick your ASIO driver. (ASIO is single-client, so
    EasyEffects must be the only host using it.)
 2. **Input** tab → **Input device** → **Windows Audio microphone** → your real
    microphone. It is read through WASAPI, so it does not have to appear in the

@@ -21,7 +21,7 @@ Use the left sidebar to add effects like EQ, Compressor, or Noise Reduction.
 ## Virtual Audio (system audio + microphone)
 
 1. Install [Synchronous Audio Router](https://github.com/eiz/SynchronousAudioRouter/releases) once (free). No setup inside it is needed.
-2. In EasyEffects, click **Virtual Audio** (top right) and turn on:
+2. In EasyEffects, open the **Devices** page and turn on:
    - **Process system audio**: all Windows audio goes through the **Output** tab to your speakers or headphones.
    - **Process microphone**: your mic goes through the **Input** tab to **EasyEffects Microphone**. Pick it in Discord, Zoom or OBS (it also becomes the Windows default input).
 3. Allow the **Restart as administrator** prompt. SAR only creates Windows devices for an administrator host.
@@ -37,7 +37,7 @@ custom driver) and mix Windows Audio with ASIO channel pairs:
 - **Mic path:** Windows microphone → effects → ASIO output pair (virtual mic).
 - **Playback path:** ASIO input pair → effects → Windows speakers/headphones.
 
-1. Open **→ Audio engine** and choose the ASIO driver.
+1. Open **Devices → Audio engine** and choose the ASIO driver.
 2. **Input** tab → **Input device** → **Windows Audio microphone** → your mic.
 3. **Input** tab → **Recorders** → the ASIO output pair used as the virtual
    microphone (select it in Discord, OBS or Zoom).

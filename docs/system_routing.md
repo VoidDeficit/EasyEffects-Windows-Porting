@@ -24,13 +24,13 @@ Both tabs run at the same time, through one ASIO driver.
    to be set up inside it.
 2. **Make sure your audio interface has an ASIO driver** (e.g. the Behringer
    FLOW 8's *FLOW ASIO Driver*). SAR uses it as the real hardware and clock.
-3. **Open EasyEffects → Virtual Audio** (top right) and turn on
+3. **Open EasyEffects → Devices** and, under **Virtual audio**, turn on
    **Process system audio** and/or **Process microphone**. EasyEffects:
    - writes `%APPDATA%\SynchronousAudioRouter\default.json`: the interface's
      ASIO driver as the hardware and the two EasyEffects devices (any endpoints
      you created yourself are kept; the original file is backed up once as
      `default.json.before-easyeffects`);
-   - switches the audio engine to SAR (→ **Audio engine**);
+   - switches the audio engine to SAR (**Devices** → **Audio engine**);
    - wires the **Output** tab: EasyEffects Speakers → effects → the
      interface's first outputs; and the **Input** tab: the interface's first
      inputs → effects → EasyEffects Microphone;
@@ -87,5 +87,5 @@ inserting silence on drift) to keep latency stable.
 ---
 
 ## Latency Optimization Tips
-- **Buffer size:** set it in the ASIO driver's panel (→ **ASIO control panel**). If you hear crackling or pops, increase it; if video and audio drift apart, decrease it.
+- **Buffer size:** set it in the ASIO driver's panel (**Devices** → **Sample rate and buffer size** → **Open control panel**). If you hear crackling or pops, increase it; if video and audio drift apart, decrease it.
 - **Match sample rates:** keep your interface and Windows' device formats at the same rate (e.g. 48000 Hz). Mismatched rates force extra resampling.
