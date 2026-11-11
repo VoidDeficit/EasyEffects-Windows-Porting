@@ -233,8 +233,15 @@ public:
         // Start hidden in the tray for "--tray" (sign-in task) or when
         // Settings > System tray > Start minimized is on. Opening EasyEffects
         // again, or clicking the tray icon, shows the window.
+        // Also after an automatic update that happened while the window was
+        // hidden in the tray (set by the updater just before installing).
         auto* settings = appProperties.getUserSettings();
-        const bool startHidden = commandLine.contains("--tray")
+        bool restartHidden = false;
+        if (settings != nullptr && settings->containsKey("update.restartHidden")) {
+            restartHidden = settings->getBoolValue("update.restartHidden", false);
+            settings->removeValue("update.restartHidden");
+        }
+        const bool startHidden = fromSignInTask || restartHidden
                               || (settings != nullptr && settings->getBoolValue("tray.startMinimized", false));
         if (!startHidden)
             mainWindow->setVisible(true);

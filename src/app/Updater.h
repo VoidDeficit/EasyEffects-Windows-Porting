@@ -57,9 +57,12 @@ public:
 
     std::function<void()> onChange;                 // state / progress changed
     std::function<void(const Release&)> onUpdateFound;  // a newer release was found
+    std::function<void()> onBeforeInstall;              // installer is about to start (app quits next)
 
     void check();
-    void downloadAndInstall();   // installed copies only; quits the app when the installer starts
+    // Installed copies only; quits the app when the installer starts.
+    // unattended = no installer window at all (automatic updates).
+    void downloadAndInstall(bool unattended = false);
 
     State getState() const { return state; }
     const Release& getRelease() const { return latest; }

@@ -193,7 +193,9 @@ private:
 
     // Updates (declared after the pages: its callbacks refresh them)
     eeval::app::Updater updater;
-    bool automaticUpdateCheck = false;   // prompt only for the start-up check
+    bool automaticUpdateCheck = false;   // auto-install / prompt only for automatic checks
+    juce::int64 nextAutoUpdateCheck = 0; // while running (e.g. in the tray), check again later
+    static constexpr juce::int64 autoUpdateInterval = 6 * 60 * 60 * 1000;   // 6 hours
     bool autostartCached = false;        // "\EasyEffects\Autostart" task exists
     void promptForUpdate(const eeval::app::Updater::Release& r);
 

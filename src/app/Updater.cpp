@@ -206,7 +206,7 @@ void Updater::check()
     });
 }
 
-void Updater::downloadAndInstall()
+void Updater::downloadAndInstall(bool unattended)
 {
     if (state != State::available)
         return;
@@ -220,7 +220,7 @@ void Updater::downloadAndInstall()
 
     auto sh = shared;
     const auto release = latest;
-    juce::Thread::launch([this, sh, release] {
+    juce::Thread::launch([this, sh, release, unattended] {
         auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("EasyEffects-Update");
         dir.createDirectory();
         auto target = dir.getChildFile(release.installerName.isNotEmpty() ? release.installerName
@@ -262,17 +262,25 @@ void Updater::downloadAndInstall()
             }
         }
 
-        juce::MessageManager::callAsync([this, sh, target, error] {
+        juce::MessageManager::callAsync([this, sh, target, error, unattended] {
             if (!sh->alive) return;
             if (error.isNotEmpty()) { setState(State::failed, error); return; }
 
-            // Silent update: the installer shows its progress, closes this app,
-            // replaces it and starts the new version.
-            if (!target.startAsProcess("/SILENT /SP- /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS")) {
+            if (onBeforeInstall) onBeforeInstall();
+
+            // The installer closes this app, replaces it and starts the new
+            // version. Unattended: no installer window at all. As this app
+            // normally runs with administrator rights (Launch task), the
+            // installer inherits them, so there is no UAC prompt either.
+            const juce::String args = juce::String(unattended ? "/VERYSILENT" : "/SILENT")
+                                    + " /SP- /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS";
+            if (!target.startAsProcess(args)) {
                 setState(State::failed, "Couldn't start the installer");
                 return;
             }
-            juce::JUCEApplicationBase::quit();
+            // Through systemRequestedQuit so the effect settings are saved first.
+            if (auto* app = juce::JUCEApplicationBase::getInstance())
+                app->systemRequestedQuit();
         });
     });
 }

@@ -36,7 +36,7 @@ Every release on the [Releases](../../releases) page has two downloads:
 
 | File | What it is |
 |---|---|
-| `EasyEffects-Windows-vX.Y.Z-Setup.exe` | **Installer (recommended).** Installs the app (and optionally the VST3), updates itself, and runs with administrator rights without a UAC prompt each time (needed for Virtual Audio). It can also start EasyEffects when you sign in. |
+| `EasyEffects-Windows-vX.Y.Z-Setup.exe` | **Installer (recommended).** Installs the app (and optionally the VST3), updates itself unattended (no questions, no installer window; it restarts by itself), and runs with administrator rights without a UAC prompt each time (needed for Virtual Audio). It can also start EasyEffects when you sign in. |
 | `EasyEffects-Windows-vX.Y.Z-Portable.zip` | **Portable.** Extract anywhere and run `EasyEffects.exe`. It tells you about new versions but does not update itself. |
 
 EasyEffects lives in the notification area (system tray): closing or minimizing the window keeps

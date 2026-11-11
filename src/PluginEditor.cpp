@@ -56,8 +56,25 @@ EasyEffectsAudioProcessorEditor::EasyEffectsAudioProcessorEditor(EasyEffectsAudi
     // --- Updates ---------------------------------------------------------------
     updater.onChange = [this] { if (settingsPage) settingsPage->refresh(); };
     updater.onUpdateFound = [this](const eeval::app::Updater::Release& r) {
-        if (automaticUpdateCheck) promptForUpdate(r);
+        const bool automatic = automaticUpdateCheck;
         automaticUpdateCheck = false;
+        if (!automatic) return;   // manual check: the Settings card shows the result
+
+        // Installed copy: download and install with no questions and no
+        // installer window; EasyEffects restarts by itself.
+        const bool canInstall = eeval::app::isInstalledCopy() && r.installerUrl.isNotEmpty();
+        if (canInstall && (settings() == nullptr || settings()->getBoolValue("update.autoInstall", true)))
+            updater.downloadAndInstall(true);
+        else
+            promptForUpdate(r);
+    };
+    updater.onBeforeInstall = [this] {
+        // Come back the way we were: hidden in the tray if the window was hidden.
+        if (auto* s = settings()) {
+            auto* top = getTopLevelComponent();
+            s->setValue("update.restartHidden", top != nullptr && !top->isVisible());
+            if (auto* f = dynamic_cast<juce::PropertiesFile*>(s)) f->saveIfNeeded();
+        }
     };
 
     // --- Command bar --------------------------------------------------------
@@ -132,11 +149,14 @@ EasyEffectsAudioProcessorEditor::EasyEffectsAudioProcessorEditor(EasyEffectsAudi
             self.updateVirtualButton();
             self.resized();
 
-            // Look for a new release a few seconds after start-up.
+            // Look for a new release a few seconds after start-up, then every
+            // 6 hours (timerCallback; honours the setting at that time).
+            self.nextAutoUpdateCheck = juce::Time::currentTimeMillis() + autoUpdateInterval;
             if (self.settings() == nullptr || self.settings()->getBoolValue("update.auto", true))
                 juce::Timer::callAfterDelay(5000, [safeThis] {
                     if (safeThis == nullptr) return;
                     safeThis->automaticUpdateCheck = true;
+                    safeThis->nextAutoUpdateCheck = juce::Time::currentTimeMillis() + autoUpdateInterval;
                     safeThis->updater.check();
                 });
         });
@@ -531,11 +551,19 @@ void EasyEffectsAudioProcessorEditor::buildSettingsPage()
                 });
 
         page.addCard(icon::sync, "Check for updates automatically", [installed] {
-                return installed ? juce::String("When EasyEffects starts; updates install with one click")
-                                 : juce::String("When EasyEffects starts (portable copy: opens the download page)");
+                return installed ? juce::String("At start-up and every 6 hours while EasyEffects runs")
+                                 : juce::String("At start-up and every 6 hours (portable copy: tells you and opens the download page)");
             })
             .withToggle([self] { return self->settings() == nullptr || self->settings()->getBoolValue("update.auto", true); },
                         [self](bool on) { if (auto* s = self->settings()) s->setValue("update.auto", on); });
+
+        if (installed)
+            page.addCard(icon::down, "Install updates automatically", [] {
+                    return juce::String("Download and install new versions without asking; EasyEffects restarts "
+                                        "by itself (back in the tray if it was there)");
+                })
+                .withToggle([self] { return self->settings() == nullptr || self->settings()->getBoolValue("update.autoInstall", true); },
+                            [self](bool on) { if (auto* s = self->settings()) s->setValue("update.autoInstall", on); });
 
         if (installed) {
             autostartCached = eeval::app::isAutostartEnabled();
@@ -1151,6 +1179,17 @@ void EasyEffectsAudioProcessorEditor::mouseExit(const juce::MouseEvent&)
 
 void EasyEffectsAudioProcessorEditor::timerCallback()
 {
+    // Periodic update check while EasyEffects keeps running (it lives in the tray).
+    if (nextAutoUpdateCheck > 0 && juce::Time::currentTimeMillis() >= nextAutoUpdateCheck) {
+        nextAutoUpdateCheck = juce::Time::currentTimeMillis() + autoUpdateInterval;
+        const auto st = updater.getState();
+        const bool enabled = settings() == nullptr || settings()->getBoolValue("update.auto", true);
+        if (enabled && st != eeval::app::Updater::State::checking && st != eeval::app::Updater::State::downloading) {
+            automaticUpdateCheck = true;
+            updater.check();
+        }
+    }
+
     // Preset drop-down shows the active preset
     auto& pm = proc().getPresetManager();
     juce::String label = pm.hasActivePreset() ? juce::String(pm.getActivePresetName()) : juce::String("No preset");
