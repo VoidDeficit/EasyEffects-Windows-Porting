@@ -40,6 +40,7 @@ juce_add_plugin(EasyEffects
     FORMATS Standalone VST3
     PRODUCT_NAME "EasyEffects"
     VERSION ${EE_VERSION}
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.png"
     VST3_CAN_REPLACE_VST2 FALSE
 )
 
@@ -86,6 +87,7 @@ target_sources(EasyEffects
     src/ui/GenericModuleEditor.cpp
     src/ui/WindowsChrome.cpp
     src/app/Updater.cpp
+    src/app/StandaloneApp.cpp
     src/PresetManager.cpp
     src/audio/WindowsAudioEndpoints.cpp
     src/audio/SecondaryPipeline.cpp
@@ -114,6 +116,14 @@ target_include_directories(EasyEffects PRIVATE src)
 # Add compile definitions
 target_compile_definitions(EasyEffects PUBLIC JUCE_VST3_CAN_REPLACE_VST2=0)
 target_compile_definitions(EasyEffects PRIVATE EE_UPDATE_REPO="${EE_UPDATE_REPO}")
+
+# Our own standalone application class (src/app/StandaloneApp.cpp): tray icon,
+# close/minimise to the tray, single instance, elevated start via Task Scheduler.
+target_compile_definitions(EasyEffects PUBLIC JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1)
+
+# App icon, embedded for the tray icon at run time.
+juce_add_binary_data(EasyEffectsAssets SOURCES assets/icon.png)
+target_link_libraries(EasyEffects PRIVATE EasyEffectsAssets)
 
 # ASIO support (lets EasyEffects host ASIO drivers such as Synchronous Audio
 # Router). JUCE bundles the Steinberg ASIO interface headers, which Steinberg

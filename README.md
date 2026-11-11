@@ -39,6 +39,10 @@ Every release on the [Releases](../../releases) page has two downloads:
 | `EasyEffects-Windows-vX.Y.Z-Setup.exe` | **Installer (recommended).** Installs the app (and optionally the VST3), updates itself, and runs with administrator rights without a UAC prompt each time (needed for Virtual Audio). It can also start EasyEffects when you sign in. |
 | `EasyEffects-Windows-vX.Y.Z-Portable.zip` | **Portable.** Extract anywhere and run `EasyEffects.exe`. It tells you about new versions but does not update itself. |
 
+EasyEffects lives in the notification area (system tray): closing or minimizing the window keeps
+it running with your effects on (switch this off under **Settings > System tray**), opening it again
+shows the running window, and the tray icon's menu turns the Output/Input effects on or off or quits.
+
 The installer registers two Task Scheduler tasks under `\EasyEffects\`: **Launch** (starts EasyEffects
 with administrator rights; the app hands over to it when you open it normally) and, if you tick the
 option, **Autostart** (at sign-in). You can turn autostart on or off later under **Settings > Updates**.

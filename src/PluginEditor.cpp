@@ -122,15 +122,6 @@ EasyEffectsAudioProcessorEditor::EasyEffectsAudioProcessorEditor(EasyEffectsAudi
             if (safeThis == nullptr) return;
             auto& self = *safeThis;
 
-            // Installed copy opened normally (Start menu, desktop, after an
-            // update): hand over to the "\EasyEffects\Launch" scheduled task,
-            // which runs EasyEffects with administrator rights without a UAC
-            // prompt. Nothing has been opened yet, so just quit.
-            if (!isElevatedCached() && eeval::app::startElevatedViaTask()) {
-                juce::JUCEApplicationBase::quit();
-                return;
-            }
-
             if (auto* s = self.settings()) {
                 self.monitorDeviceName = s->getValue("monitorDevice", "");
                 self.navUserCompact = s->getBoolValue("ui.navCompact", false);
@@ -498,6 +489,18 @@ void EasyEffectsAudioProcessorEditor::buildSettingsPage()
         const bool installed = eeval::app::isInstalledCopy();
         using State = eeval::app::Updater::State;
 
+        page.addSection("System tray");
+        page.addCard(icon::power, "Keep running when I close the window", [] {
+                return juce::String("EasyEffects stays in the notification area and your effects keep working");
+            })
+            .withToggle([self] { return self->settings() == nullptr || self->settings()->getBoolValue("tray.closeToTray", true); },
+                        [self](bool on) { if (auto* s = self->settings()) s->setValue("tray.closeToTray", on); });
+        page.addCard(icon::chevronDown, "Minimize to the notification area", [] {
+                return juce::String("Hide the taskbar button when you minimize EasyEffects");
+            })
+            .withToggle([self] { return self->settings() == nullptr || self->settings()->getBoolValue("tray.minimiseToTray", true); },
+                        [self](bool on) { if (auto* s = self->settings()) s->setValue("tray.minimiseToTray", on); });
+
         page.addSection("Updates");
         page.addCard(icon::sync, "App updates", [self] { return self->updater.getStatusText(); })
             .withButton([self, installed] {
@@ -531,7 +534,7 @@ void EasyEffectsAudioProcessorEditor::buildSettingsPage()
             autostartCached = eeval::app::isAutostartEnabled();
             page.addCard(icon::admin, "Start when I sign in", [] {
                     return isElevatedCached()
-                        ? juce::String("Starts EasyEffects with administrator rights, without a UAC prompt")
+                        ? juce::String("Starts in the notification area with administrator rights, without a UAC prompt")
                         : juce::String("Needs EasyEffects to run with administrator rights to change this");
                 })
                 .withToggle([self] { return self->autostartCached; },
@@ -1844,4 +1847,20 @@ void EasyEffectsAudioProcessorEditor::promptForUpdate(const eeval::app::Updater:
             safeThis->showPage(Page::Settings);   // shows the download progress
             safeThis->updater.downloadAndInstall();
         });
+}
+
+bool EasyEffectsAudioProcessorEditor::isPipelineBypassed(bool output) const
+{
+    if (output)
+        return outputPipeline != nullptr && outputPipeline->processor().getGlobalBypass();
+    return hostProcessor.getGlobalBypass();
+}
+
+void EasyEffectsAudioProcessorEditor::setPipelineBypassed(bool output, bool bypassed)
+{
+    if (output && outputPipeline != nullptr)
+        outputPipeline->processor().setGlobalBypass(bypassed);
+    else if (!output)
+        hostProcessor.setGlobalBypass(bypassed);
+    bypassBtn.setToggleState(proc().getGlobalBypass(), juce::dontSendNotification);
 }

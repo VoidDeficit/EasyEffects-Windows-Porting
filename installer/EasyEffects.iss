@@ -23,6 +23,8 @@
   #define Repo "VoidDeficit/EasyEffects-Windows-Porting"
 #endif
 #define BuildDir RootDir + "\build\EasyEffects_artefacts\Release"
+; Icon the build generates from assets\icon.png
+#define IconFile RootDir + "\build\EasyEffects_artefacts\JuceLibraryCode\icon.ico"
 
 [Setup]
 AppId={{6B0F5E2A-3C1D-4E7B-9A8F-2D4C6E8B1A35}
@@ -50,6 +52,9 @@ RestartApplications=no
 UninstallDisplayIcon={app}\EasyEffects.exe
 UninstallDisplayName=EasyEffects for Windows
 VersionInfoVersion={#AppVersion}
+#if FileExists(IconFile)
+SetupIconFile={#IconFile}
+#endif
 
 [Types]
 Name: "full"; Description: "Full installation"

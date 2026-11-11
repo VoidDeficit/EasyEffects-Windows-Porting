@@ -3,7 +3,10 @@
 # only creates its Windows devices for an elevated host).
 #
 #   \EasyEffects\Launch     on demand; the app starts it when opened normally
-#   \EasyEffects\Autostart  at sign-in (optional)
+#   \EasyEffects\Autostart  at sign-in, starts hidden in the tray (optional)
+#
+# Launch allows parallel runs: a second EasyEffects started by it hands over
+# to the one already running (single instance), which shows its window.
 #
 # Run elevated (the installer does). Usage:
 #   tasks.ps1 -Install -Exe "C:\Program Files\EasyEffects\EasyEffects.exe" [-Autostart]
@@ -27,11 +30,13 @@ function Remove-Task([string]$name) {
     }
 }
 
-function New-Task([string]$name, $trigger) {
-    $action    = New-ScheduledTaskAction -Execute $Exe -WorkingDirectory (Split-Path $Exe)
+function New-Task([string]$name, $trigger, [string]$argument = "") {
+    $actionArgs = @{ Execute = $Exe; WorkingDirectory = (Split-Path $Exe) }
+    if ($argument) { $actionArgs.Argument = $argument }
+    $action    = New-ScheduledTaskAction @actionArgs
     $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
     $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-                    -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -Priority 4
+                    -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances Parallel -Priority 4
     $taskArgs = @{ TaskPath = $folder; TaskName = $name; Action = $action; Principal = $principal; Settings = $settings; Force = $true }
     if ($trigger) { $taskArgs.Trigger = $trigger }
     Register-ScheduledTask @taskArgs | Out-Null
@@ -47,12 +52,12 @@ if (-not $Exe -or -not (Test-Path $Exe)) { throw "EasyEffects.exe not found: '$E
 
 if ($Install) {
     New-Task "Launch" $null
-    if ($Autostart) { New-Task "Autostart" (New-ScheduledTaskTrigger -AtLogOn -User $user) }
+    if ($Autostart) { New-Task "Autostart" (New-ScheduledTaskTrigger -AtLogOn -User $user) "--tray" }
     else { Remove-Task "Autostart" }
     exit 0
 }
 
-if ($SetAutostart -eq "on")  { New-Task "Autostart" (New-ScheduledTaskTrigger -AtLogOn -User $user); exit 0 }
+if ($SetAutostart -eq "on")  { New-Task "Autostart" (New-ScheduledTaskTrigger -AtLogOn -User $user) "--tray"; exit 0 }
 if ($SetAutostart -eq "off") { Remove-Task "Autostart"; exit 0 }
 
 throw "Nothing to do: pass -Install, -Uninstall or -SetAutostart."

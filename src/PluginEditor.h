@@ -58,6 +58,11 @@ public:
     // Called by sidebar rows or externally to refresh
     void refreshSidebar();
 
+    // Used by the tray menu (src/app/StandaloneApp.cpp).
+    bool hasOutputPipeline() const { return outputPipeline != nullptr; }
+    bool isPipelineBypassed(bool output) const;
+    void setPipelineBypassed(bool output, bool bypassed);
+
 private:
     enum class Pipeline { Output, Input };
     enum class Page { Output, Input, Devices, Settings };

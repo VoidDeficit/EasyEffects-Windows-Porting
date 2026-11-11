@@ -307,13 +307,16 @@ void EasyEffectsAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // Push final output to FFT analyzer
     if (buffer.getNumChannels() > 0) {
         if (buffer.getNumChannels() == 2) {
-            float mono[1024]; // Safe stack buffer for common block sizes
-            int numToProcess = std::min(buffer.getNumSamples(), 1024);
+            // Mix to mono in chunks: ASIO drivers often use blocks > 1024 samples.
+            float mono[1024];
             auto* l = buffer.getReadPointer(0);
             auto* r = buffer.getReadPointer(1);
-            for (int i = 0; i < numToProcess; ++i)
-                mono[i] = (l[i] + r[i]) * 0.5f;
-            spectrumAnalyzer.pushBlock(mono, numToProcess);
+            for (int start = 0; start < buffer.getNumSamples(); start += 1024) {
+                const int n = std::min(1024, buffer.getNumSamples() - start);
+                for (int i = 0; i < n; ++i)
+                    mono[i] = (l[start + i] + r[start + i]) * 0.5f;
+                spectrumAnalyzer.pushBlock(mono, n);
+            }
         } else {
             spectrumAnalyzer.pushBlock(buffer.getReadPointer(0), buffer.getNumSamples());
         }

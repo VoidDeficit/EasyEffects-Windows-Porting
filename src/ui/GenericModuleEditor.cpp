@@ -120,8 +120,8 @@ void GenericModuleEditor::timerCallback() {
 
     if (showDynamicsViz && dynamicsViz) {
         float inDb = module->getInputLevel();
-        float gr = module->getGainReduction(); // reduction factor 0 to 1
-        float outDb = inDb - (gr * 30.0f); // Rough visual approximation of output
+
+        float outDb = module->getOutputLevel();      // measured after the effect
         dynamicsViz->setCurrentLevels(inDb, outDb);
     }
 }

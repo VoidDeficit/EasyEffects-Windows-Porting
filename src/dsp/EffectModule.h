@@ -31,20 +31,37 @@ public:
     // Returns the latency in samples (if any)
     virtual double getLatencySamples() const { return 0.0; }
 
-    // For dynamics processors (0.0 to 1.0, where 1.0 is full reduction)
-    virtual float getGainReduction() const { return 0.0f; }
+    // For dynamics processors (0.0 to 1.0, where 1.0 is full reduction).
+    // By default measured from the block peaks before/after processInternal().
+    virtual float getGainReduction() const { return measuredReduction.load(); }
 
     // For Voice Activity Detection (0.0 to 1.0)
     virtual float getVADProbability() const { return 0.0f; }
 
-    // For real-time signal visualization (dB-ish scale or magnitude)
+    // Peak level (dBFS) of the last block before / after the effect, for the
+    // dynamics graph. Measured for every effect, whatever engine (Windows
+    // Audio or ASIO) runs the chain.
     virtual float getInputLevel() const { return inputLevel.load(); }
+    virtual float getOutputLevel() const { return outputLevel.load(); }
 
     // Main process entry point — handles bypass and dry/wet mix
     void process(juce::AudioBuffer<float>& buffer)
     {
         if (bypassed) return;
 
+        const int n = buffer.getNumSamples();
+        const float inMag = n > 0 ? buffer.getMagnitude(0, n) : 0.0f;
+        processWithMix(buffer);
+        const float outMag = n > 0 ? buffer.getMagnitude(0, n) : 0.0f;
+
+        inputLevel.store(juce::Decibels::gainToDecibels(inMag, -100.0f));
+        outputLevel.store(juce::Decibels::gainToDecibels(outMag, -100.0f));
+        measuredReduction.store(inMag > 0.0001f ? juce::jlimit(0.0f, 1.0f, 1.0f - outMag / inMag) : 0.0f);
+    }
+
+private:
+    void processWithMix(juce::AudioBuffer<float>& buffer)
+    {
         if (dryWetMix >= 1.0f) {
             // Fully wet — no need to copy
             processInternal(buffer);
@@ -66,6 +83,7 @@ public:
         }
     }
 
+public:
     void setBypassed(bool bypass) { bypassed = bypass; }
     bool isBypassed() const { return bypassed; }
 
@@ -114,7 +132,9 @@ protected:
     float dryWetMix = 1.0f; // 1.0 = fully wet (effect applied)
     std::string slotPrefix;      // e.g., "slot3"
     std::string slotParamPrefix; // e.g., "slot3.compressor"
-    std::atomic<float> inputLevel { 0.0f };
+    std::atomic<float> inputLevel { -100.0f };
+    std::atomic<float> outputLevel { -100.0f };
+    std::atomic<float> measuredReduction { 0.0f };
 
     float slotInGain = 1.0f;
     float slotOutGain = 1.0f;
