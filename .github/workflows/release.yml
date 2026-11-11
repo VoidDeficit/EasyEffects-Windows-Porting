@@ -7,14 +7,15 @@
 #        EasyEffects-Windows-vX.Y.Z-Setup.exe     (installer, updates itself)
 #      and publishes them as release vX.Y.Z with generated release notes.
 #
-# On other branches the same build runs and the files are attached to the
-# workflow run as artifacts, but nothing is released. A version that already
-# has a tag is never released twice.
+# Only master builds; pushes to other branches start nothing. A version that
+# already has a tag is never released twice.
 
 name: Release
 
 on:
   push:
+    branches:
+      - master
     paths:
       - VERSION
       - .github/workflows/release.yml

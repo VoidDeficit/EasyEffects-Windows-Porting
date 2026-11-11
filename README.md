@@ -54,8 +54,8 @@ Uninstalling removes both tasks.
 Releases are built by GitHub Actions ([release.yml](.github/workflows/release.yml)). To publish one,
 bump the version in [`VERSION`](VERSION) (for example `0.2.0` to `0.3.0`) and push it to `master`.
 The workflow builds the app, creates the portable zip and the installer, and publishes
-release `vX.Y.Z` with generated release notes. On other branches it only builds and attaches the files
-to the workflow run.
+release `vX.Y.Z` with generated release notes.
+Only `master` builds; pushes to other branches start nothing.
 
 ---
 
