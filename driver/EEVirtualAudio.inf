@@ -1,0 +1,197 @@
+;
+; EEVirtualAudio.inf - EasyEffects Virtual Audio Driver
+;
+; Root-enumerated PortCls/WaveRT driver exposing two loopback cables:
+;   EasyEffects Speakers  -> EasyEffects Speakers Monitor   (system audio into EasyEffects)
+;   EasyEffects Mic Feed  -> EasyEffects Microphone         (processed mic out of EasyEffects)
+;
+; SPDX-License-Identifier: GPL-3.0-or-later
+;
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = MEDIA
+ClassGuid   = {4d36e96c-e325-11ce-bfc1-08002be10318}
+Provider    = %ProviderName%
+CatalogFile = EEVirtualAudio.cat
+DriverVer   = 11/10/2026,1.0.0.0
+PnpLockdown = 1
+
+[SourceDisksNames]
+222 = %DiskName%,,,""
+
+[SourceDisksFiles]
+EEVirtualAudio.sys = 222
+
+[DestinationDirs]
+DefaultDestDir     = 13
+EEVAD.CopyList     = 13
+
+[Manufacturer]
+; DIRID 13 (driver store) requires Windows 10 1709 (10.0.16299) or newer.
+%MfgName% = EEVAD, NTamd64.10.0...16299, NTarm64.10.0...16299
+
+[EEVAD.NTamd64.10.0...16299]
+%EEVAD.DeviceDesc% = EEVAD_Device, ROOT\EasyEffectsVirtualAudio
+
+[EEVAD.NTarm64.10.0...16299]
+%EEVAD.DeviceDesc% = EEVAD_Device, ROOT\EasyEffectsVirtualAudio
+
+;------------------------------------------------------------------------------
+; Install
+;------------------------------------------------------------------------------
+
+[EEVAD_Device.NT]
+Include  = ks.inf, wdmaudio.inf
+Needs    = KS.Registration, WDMAUDIO.Registration
+CopyFiles = EEVAD.CopyList
+AddReg   = EEVAD.AddReg
+
+[EEVAD.CopyList]
+EEVirtualAudio.sys
+
+[EEVAD.AddReg]
+; Endpoint names shown in Windows Sound settings (topology jack pin Name GUIDs, see common.h)
+HKLM, %MediaCategories%\%Name.Speakers%,        Name,    , %Name.Speakers.Text%
+HKLM, %MediaCategories%\%Name.Speakers%,        Display, 1, 00,00,00,00
+HKLM, %MediaCategories%\%Name.SpeakersMonitor%, Name,    , %Name.SpeakersMonitor.Text%
+HKLM, %MediaCategories%\%Name.SpeakersMonitor%, Display, 1, 00,00,00,00
+HKLM, %MediaCategories%\%Name.MicFeed%,         Name,    , %Name.MicFeed.Text%
+HKLM, %MediaCategories%\%Name.MicFeed%,         Display, 1, 00,00,00,00
+HKLM, %MediaCategories%\%Name.Microphone%,      Name,    , %Name.Microphone.Text%
+HKLM, %MediaCategories%\%Name.Microphone%,      Display, 1, 00,00,00,00
+
+;------------------------------------------------------------------------------
+; Interfaces (KSNAME_* must match the subdevice names in adapter.cpp)
+;------------------------------------------------------------------------------
+
+[EEVAD_Device.NT.Interfaces]
+; Endpoint 0: EasyEffects Speakers (render)
+AddInterface = %KSCATEGORY_AUDIO%,    %KSNAME_Wave0%, EEVAD.I.Wave0
+AddInterface = %KSCATEGORY_RENDER%,   %KSNAME_Wave0%, EEVAD.I.Wave0
+AddInterface = %KSCATEGORY_REALTIME%, %KSNAME_Wave0%, EEVAD.I.Wave0
+AddInterface = %KSCATEGORY_AUDIO%,    %KSNAME_Topo0%, EEVAD.I.Topo0
+AddInterface = %KSCATEGORY_TOPOLOGY%, %KSNAME_Topo0%, EEVAD.I.Topo0
+
+; Endpoint 1: EasyEffects Speakers Monitor (capture)
+AddInterface = %KSCATEGORY_AUDIO%,    %KSNAME_Wave1%, EEVAD.I.Wave1
+AddInterface = %KSCATEGORY_CAPTURE%,  %KSNAME_Wave1%, EEVAD.I.Wave1
+AddInterface = %KSCATEGORY_REALTIME%, %KSNAME_Wave1%, EEVAD.I.Wave1
+AddInterface = %KSCATEGORY_AUDIO%,    %KSNAME_Topo1%, EEVAD.I.Topo1
+AddInterface = %KSCATEGORY_TOPOLOGY%, %KSNAME_Topo1%, EEVAD.I.Topo1
+
+; Endpoint 2: EasyEffects Mic Feed (render)
+AddInterface = %KSCATEGORY_AUDIO%,    %KSNAME_Wave2%, EEVAD.I.Wave2
+AddInterface = %KSCATEGORY_RENDER%,   %KSNAME_Wave2%, EEVAD.I.Wave2
+AddInterface = %KSCATEGORY_REALTIME%, %KSNAME_Wave2%, EEVAD.I.Wave2
+AddInterface = %KSCATEGORY_AUDIO%,    %KSNAME_Topo2%, EEVAD.I.Topo2
+AddInterface = %KSCATEGORY_TOPOLOGY%, %KSNAME_Topo2%, EEVAD.I.Topo2
+
+; Endpoint 3: EasyEffects Microphone (capture)
+AddInterface = %KSCATEGORY_AUDIO%,    %KSNAME_Wave3%, EEVAD.I.Wave3
+AddInterface = %KSCATEGORY_CAPTURE%,  %KSNAME_Wave3%, EEVAD.I.Wave3
+AddInterface = %KSCATEGORY_REALTIME%, %KSNAME_Wave3%, EEVAD.I.Wave3
+AddInterface = %KSCATEGORY_AUDIO%,    %KSNAME_Topo3%, EEVAD.I.Topo3
+AddInterface = %KSCATEGORY_TOPOLOGY%, %KSNAME_Topo3%, EEVAD.I.Topo3
+
+[EEVAD.I.Wave0]
+AddReg = EEVAD.I.Wave0.AddReg
+[EEVAD.I.Wave0.AddReg]
+HKR,,CLSID,,%Proxy.CLSID%
+HKR,,FriendlyName,,%Name.Speakers.Text%
+
+[EEVAD.I.Topo0]
+AddReg = EEVAD.I.Topo0.AddReg
+[EEVAD.I.Topo0.AddReg]
+HKR,,CLSID,,%Proxy.CLSID%
+HKR,,FriendlyName,,%Name.Speakers.Text%
+
+[EEVAD.I.Wave1]
+AddReg = EEVAD.I.Wave1.AddReg
+[EEVAD.I.Wave1.AddReg]
+HKR,,CLSID,,%Proxy.CLSID%
+HKR,,FriendlyName,,%Name.SpeakersMonitor.Text%
+
+[EEVAD.I.Topo1]
+AddReg = EEVAD.I.Topo1.AddReg
+[EEVAD.I.Topo1.AddReg]
+HKR,,CLSID,,%Proxy.CLSID%
+HKR,,FriendlyName,,%Name.SpeakersMonitor.Text%
+
+[EEVAD.I.Wave2]
+AddReg = EEVAD.I.Wave2.AddReg
+[EEVAD.I.Wave2.AddReg]
+HKR,,CLSID,,%Proxy.CLSID%
+HKR,,FriendlyName,,%Name.MicFeed.Text%
+
+[EEVAD.I.Topo2]
+AddReg = EEVAD.I.Topo2.AddReg
+[EEVAD.I.Topo2.AddReg]
+HKR,,CLSID,,%Proxy.CLSID%
+HKR,,FriendlyName,,%Name.MicFeed.Text%
+
+[EEVAD.I.Wave3]
+AddReg = EEVAD.I.Wave3.AddReg
+[EEVAD.I.Wave3.AddReg]
+HKR,,CLSID,,%Proxy.CLSID%
+HKR,,FriendlyName,,%Name.Microphone.Text%
+
+[EEVAD.I.Topo3]
+AddReg = EEVAD.I.Topo3.AddReg
+[EEVAD.I.Topo3.AddReg]
+HKR,,CLSID,,%Proxy.CLSID%
+HKR,,FriendlyName,,%Name.Microphone.Text%
+
+;------------------------------------------------------------------------------
+; Service
+;------------------------------------------------------------------------------
+
+[EEVAD_Device.NT.Services]
+AddService = EEVirtualAudio, 0x00000002, EEVAD.Service
+
+[EEVAD.Service]
+DisplayName   = %EEVAD.SvcDesc%
+ServiceType   = 1               ; SERVICE_KERNEL_DRIVER
+StartType     = 3               ; SERVICE_DEMAND_START
+ErrorControl  = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary = %13%\EEVirtualAudio.sys
+
+;------------------------------------------------------------------------------
+; Strings
+;------------------------------------------------------------------------------
+
+[Strings]
+ProviderName      = "EasyEffects Windows"
+MfgName           = "EasyEffects Windows"
+DiskName          = "EasyEffects Virtual Audio Install Disk"
+EEVAD.DeviceDesc  = "EasyEffects Virtual Audio"
+EEVAD.SvcDesc     = "EasyEffects Virtual Audio Driver"
+
+MediaCategories   = "SYSTEM\CurrentControlSet\Control\MediaCategories"
+
+Name.Speakers        = "{E3A1C0D1-5A1E-4E0B-9E51-7A11EEFA0001}"
+Name.SpeakersMonitor = "{E3A1C0D1-5A1E-4E0B-9E51-7A11EEFA0002}"
+Name.MicFeed         = "{E3A1C0D1-5A1E-4E0B-9E51-7A11EEFA0003}"
+Name.Microphone      = "{E3A1C0D1-5A1E-4E0B-9E51-7A11EEFA0004}"
+
+Name.Speakers.Text        = "EasyEffects Speakers"
+Name.SpeakersMonitor.Text = "EasyEffects Speakers Monitor"
+Name.MicFeed.Text         = "EasyEffects Mic Feed"
+Name.Microphone.Text      = "EasyEffects Microphone"
+
+KSNAME_Wave0 = "Wave0"
+KSNAME_Topo0 = "Topo0"
+KSNAME_Wave1 = "Wave1"
+KSNAME_Topo1 = "Topo1"
+KSNAME_Wave2 = "Wave2"
+KSNAME_Topo2 = "Topo2"
+KSNAME_Wave3 = "Wave3"
+KSNAME_Topo3 = "Topo3"
+
+KSCATEGORY_AUDIO    = "{6994AD04-93EF-11D0-A3CC-00A0C9223196}"
+KSCATEGORY_RENDER   = "{65E8773E-8F56-11D0-A3B9-00A0C9223196}"
+KSCATEGORY_CAPTURE  = "{65E8773D-8F56-11D0-A3B9-00A0C9223196}"
+KSCATEGORY_REALTIME = "{EB115FFC-10C8-4964-831D-6DCB02E6F23F}"
+KSCATEGORY_TOPOLOGY = "{DDA54A40-1E4C-11D1-A050-405705C10000}"
+
+Proxy.CLSID = "{17CCA71B-ECD7-11D0-B908-00A0C9223196}"

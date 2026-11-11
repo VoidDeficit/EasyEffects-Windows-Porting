@@ -71,6 +71,20 @@ public:
         return slotPrefix(slotIndex) + "." + typeId + "." + suffix;
     }
 
+    // Slot-level float parameters shared by every effect type ("slotN.<suffix>"):
+    // dry/wet mix plus the EasyEffects-style per-effect input/output gain.
+    // Moving, removing and preset save/load all copy exactly this list.
+    static const std::vector<std::string>& slotLevelFloatParams() {
+        static const std::vector<std::string> list { "mix", "inGain", "outGain" };
+        return list;
+    }
+
+    static bool isSlotLevelFloatParam(const std::string& suffix) {
+        for (const auto& s : slotLevelFloatParams())
+            if (s == suffix) return true;
+        return false;
+    }
+
 private:
     static std::vector<EffectTypeDescriptor> buildRegistry();
 };

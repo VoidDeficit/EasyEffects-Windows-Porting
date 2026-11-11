@@ -467,6 +467,17 @@ void EffectRegistry::registerSlotParameters(
         "Slot " + std::to_string(slotIndex) + " Mix",
         juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f), 100.0f));
 
+    // Per-effect input / output gain (EasyEffects shows these above every plugin)
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID(sp + ".inGain", 1),
+        "Slot " + std::to_string(slotIndex) + " Input Gain",
+        juce::NormalisableRange<float>(-36.0f, 36.0f, 0.1f), 0.0f));
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID(sp + ".outGain", 1),
+        "Slot " + std::to_string(slotIndex) + " Output Gain",
+        juce::NormalisableRange<float>(-36.0f, 36.0f, 0.1f), 0.0f));
+
     // Register all effect-type parameters for this slot
     for (const auto& effectType : getEffectTypes()) {
         std::string prefix = sp + "." + effectType.typeId; // e.g., "slot0.compressor"

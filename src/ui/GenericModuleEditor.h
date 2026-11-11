@@ -48,6 +48,15 @@ private:
     bool showVadMeter = false;
     bool showDynamicsViz = false;
 
+    // EasyEffects-style titled cards (computed in resized(), drawn in paint())
+    juce::Rectangle<int> headerArea, controlsCard, sideCard;
+    juce::String sideCardTitle;
+
+    static constexpr int rowHeight = 30;
+    static constexpr int rowGap = 8;
+    static constexpr int labelWidth = 150;
+    int computePreferredHeight() const;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GenericModuleEditor)
 };
 

@@ -2,7 +2,11 @@
 
 Because JUCE does not directly interact with the low-level Windows Audio Processing Object (APO) architecture, EasyEffects Windows operates as a Standalone Audio Host. 
 
-To apply these effects to your system-wide audio (YouTube, Spotify, Games) gracefully, we use a **Virtual Audio Cable (VAC)** workflow.
+To apply these effects to your system-wide audio (YouTube, Spotify, games), audio has to be looped through a virtual device.
+
+> **Recommended:** use the bundled **EasyEffects Virtual Audio** driver (`driver/`, see [driver/README.md](../driver/README.md)). After installing it, the app's **Virtual Audio** button does every step below automatically, using *EasyEffects Speakers* / *EasyEffects Speakers Monitor* for system audio and *EasyEffects Mic Feed* / *EasyEffects Microphone* for voice. It restores your Windows defaults when you turn it off.
+>
+> The rest of this guide describes the manual **Virtual Audio Cable (VAC)** workflow with third-party cables.
 
 ## Overview of the Pipeline
 
@@ -82,6 +86,38 @@ Physical Mic (Fifine) → EasyEffects → VB-Audio Virtual Cable → Discord
 | **Gain** | Adjust to taste (0 to +6 dB) | Final output level adjustment |
 
 **Bypass (disable)** effects you don't need for voice: Exciter, Bass Enhancer, Convolver, Delay, Reverb.
+
+---
+
+## ASIO ⇄ Windows Audio (Synchronous Audio Router, custom ASIO drivers)
+
+EasyEffects can host the ASIO driver itself, and each side of a pipeline may use
+Windows Audio instead of an ASIO channel pair:
+
+| Pipeline | Input | Output |
+|---|---|---|
+| **Input** (mic) | Windows Audio microphone (WASAPI) | ASIO output pair |
+| **Output** (system) | ASIO input pair | Windows Audio output device (WASAPI) |
+
+Setup for "mic → custom ASIO" **and** "ASIO → speakers":
+
+1. Install the ASIO driver (e.g. Synchronous Audio Router on top of your
+   interface's ASIO driver). Run EasyEffects as administrator if the driver only
+   creates its Windows devices for elevated hosts (SAR does).
+2. → **Audio engine** → select the driver.
+3. **Input** tab → **Input device** → **Windows Audio microphone** → your real
+   microphone. It is captured through WASAPI, so Windows-only microphones work
+   even when the ASIO driver does not list them.
+4. **Input** tab → **Recorders** → the ASIO output pair that is your virtual
+   microphone. Pick that pair as the microphone in Discord/OBS/Zoom.
+5. **Output** tab → **Players** → the ASIO input pair carrying the audio to
+   process (e.g. a SAR "Players" endpoint).
+6. **Output** tab → **Output device** → **Windows Audio output device** → your
+   real speakers/headphones.
+
+The WASAPI devices and the ASIO driver have independent clocks, so EasyEffects
+resamples if the rates differ and buffers through FIFOs (dropping old audio or
+inserting silence on drift) to keep latency stable.
 
 ---
 

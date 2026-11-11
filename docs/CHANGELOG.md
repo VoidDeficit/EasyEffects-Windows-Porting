@@ -1,5 +1,17 @@
 # Changelog - EasyEffects Windows
 
+## [Unreleased] - ASIO engine: Windows Audio on both sides
+### Added
+- **Windows Audio microphone as ASIO input source**: The Input pipeline can now read the
+  microphone through WASAPI (Input tab → "Input device" → Windows Audio microphone) and
+  write the processed signal to any ASIO output pair, so Windows-only mics work with a
+  custom ASIO driver / Synchronous Audio Router.
+- **Windows Audio output as ASIO sink**: The Output pipeline can play the processed ASIO
+  input pair (Output tab → "Output device" → Windows Audio output device) on real
+  speakers/headphones, giving the reverse route ASIO → effects → Windows.
+- Sample-rate conversion and lock-free FIFOs absorb clock drift between WASAPI and ASIO
+  in both directions.
+
 ## [Phase 12] - UX Polish, Bypass & Preset Overhaul
 ### Added
 - **Global Chain Bypass**: Toggle button to bypass the entire effect chain for A/B comparison.

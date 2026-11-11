@@ -2,7 +2,7 @@
 
 We have successfully implemented the first 4 "Pure DSP" effects as planned and approved. These modules are natively implemented in C++ using JUCE and follow the dynamic slot architecture.
 
-## 🚀 Accomplishments
+## Accomplishments
 
 ### 1. Stereo Tools [NEW]
 A powerful utility for stereo field manipulation.
@@ -37,7 +37,7 @@ A look-ahead brickwall limiter designed for final gain boosting.
 
 ---
 
-## 🛠 Technical Changes
+## Technical Changes
 
 ### [NEW] DSP Modules
 - `StereoToolsModule.h/cpp`
@@ -51,7 +51,7 @@ A look-ahead brickwall limiter designed for final gain boosting.
 
 ---
 
-## 🧪 Validation Results
+## Validation Results
 
 - **Builds**: VST3 build succeeded. (Note: Standalone build failed due to file lock; ensure `EasyEffects.exe` is closed for full clean build).
 - **Parameters**: Verified all 16 slots now support the new effects via the "+ Add Effect" menu.
@@ -59,7 +59,7 @@ A look-ahead brickwall limiter designed for final gain boosting.
 
 ---
 
-## 📅 Next Steps
+## Next Steps
 In the next batch of Phase 9B, we will implement:
 - **Crystalizer** (Granular Pitch Shifting)
 - **Crossfeed** (Headphone Simulation)

@@ -2,7 +2,7 @@
 
 Welcome to EasyEffects Windows! This is a native Windows audio processor inspired by the original EasyEffects for Linux.
 
-## 🚀 Getting Started
+## Getting Started
 
 ### 1. Launch the App
 Run `EasyEffects.exe` from this folder.
@@ -18,7 +18,18 @@ Use the left sidebar to add effects like EQ, Compressor, or Noise Reduction.
 
 ---
 
-## 🎙️ Microphone Audio Setup (Voice Processing)
+## Built-in Virtual Audio (no VB-Cable needed)
+
+1. Double-click **`EEVirtualAudioSetup.exe`** and allow the administrator prompt.
+   You can also open EasyEffects and choose **Virtual Audio → Install virtual audio driver...**.
+2. In EasyEffects, click **Virtual Audio** (top right):
+   - **Process system audio**: all Windows audio goes through EasyEffects to your speakers or headphones.
+   - **Process microphone**: select **EasyEffects Microphone** in Discord, Zoom or OBS. It is also set as the Windows default input.
+3. **Off**, or closing EasyEffects, restores your normal Windows devices.
+
+---
+
+## Microphone Audio Setup with VB-Cable (Voice Processing)
 
 To apply effects to your microphone before sending it to Discord, Zoom, or OBS:
 
@@ -31,7 +42,29 @@ To apply effects to your microphone before sending it to Discord, Zoom, or OBS:
 
 ---
 
-## 🎧 System-Wide Audio Routing (Optional)
+## Custom ASIO routing (Windows ⇄ ASIO, both directions)
+
+EasyEffects can host an ASIO driver (e.g. Synchronous Audio Router or your own
+custom driver) and mix Windows Audio with ASIO channel pairs:
+
+- **Mic path:** Windows microphone → effects → ASIO output pair (virtual mic).
+- **Playback path:** ASIO input pair → effects → Windows speakers/headphones.
+
+1. Open **→ Audio engine** and choose the ASIO driver.
+2. **Input** tab → **Input device** → **Windows Audio microphone** → your mic.
+3. **Input** tab → **Recorders** → the ASIO output pair used as the virtual
+   microphone (select it in Discord, OBS or Zoom).
+4. **Output** tab → **Players** → the ASIO input pair that carries the audio to
+   process (e.g. a SAR "Players" endpoint).
+5. **Output** tab → **Output device** → **Windows Audio output device** → your
+   real speakers or headphones.
+
+Resampling and FIFOs keep the Windows Audio devices and the ASIO driver (which
+run on separate clocks) in sync.
+
+---
+
+## System-Wide Audio Routing (Optional)
 
 By default, EasyEffects Windows only processes the direct input you select. It **does not** automatically capture all system audio (like games or Spotify) out-of-the-box.
 
@@ -45,7 +78,7 @@ To apply effects to your entire system's output:
 
 ---
 
-## 🔌 Using as a VST3 Plugin
+## Using as a VST3 Plugin
 
 You can also use EasyEffects inside OBS Studio or DAWs!
 
@@ -55,7 +88,7 @@ You can also use EasyEffects inside OBS Studio or DAWs!
 
 ---
 
-## ⚖️ Legal & Licensing
+## Legal & Licensing
 
 - **License:** GNU General Public License v3.0 (GPLv3)
 - **External Libraries:** This software uses RNNoise (BSD) and SoundTouch (LGPL, dynamically linked or otherwise documented in source).

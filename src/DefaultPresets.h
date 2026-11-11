@@ -11,7 +11,7 @@ const char* broadcastHighPitch = R"({
     {
       "typeId": "rnnoise",
       "params": {
-        "mix": 1.0
+        "mix": 100.0
       }
     },
     {
@@ -22,7 +22,7 @@ const char* broadcastHighPitch = R"({
         "attack": 2.0,
         "release": 100.0,
         "makeup": 4.0,
-        "mix": 1.0
+        "mix": 100.0
       }
     },
     {
@@ -48,7 +48,7 @@ const char* broadcastHighPitch = R"({
         "band3_freq": 10000.0,
         "band3_gain": 0.0,
         "band3_q": 0.707,
-        "mix": 1.0
+        "mix": 100.0
       }
     }
   ]
@@ -59,7 +59,7 @@ const char* deepVoice = R"({
   "slots": [
     {
       "typeId": "rnnoise",
-      "params": { "mix": 1.0 }
+      "params": { "mix": 100.0 }
     },
     {
       "typeId": "equalizer",
@@ -79,7 +79,7 @@ const char* deepVoice = R"({
         "band2_freq": 250.0,
         "band2_gain": 3.0,
         "band2_q": 1.0,
-        "mix": 1.0
+        "mix": 100.0
       }
     }
   ]
@@ -106,7 +106,7 @@ const char* walkieTalkie = R"({
         "band2_freq": 3000.0,
         "band2_gain": 0.0,
         "band2_q": 1.0,
-        "mix": 1.0
+        "mix": 100.0
       }
     },
     {
@@ -114,7 +114,7 @@ const char* walkieTalkie = R"({
       "params": {
         "bit_depth": 8.0,
         "reduction": 4.0,
-        "mix": 0.8
+        "mix": 80.0
       }
     }
   ]
@@ -125,7 +125,7 @@ const char* flat = R"({
   "slots": [
     {
       "typeId": "rnnoise",
-      "params": { "mix": 1.0 }
+      "params": { "mix": 100.0 }
     },
     {
       "typeId": "compressor",
@@ -135,7 +135,7 @@ const char* flat = R"({
         "attack": 5.0,
         "release": 50.0,
         "makeup": 2.0,
-        "mix": 1.0
+        "mix": 100.0
       }
     }
   ]

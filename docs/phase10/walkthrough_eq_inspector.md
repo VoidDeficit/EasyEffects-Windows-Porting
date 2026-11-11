@@ -21,5 +21,5 @@ The Visual Equalizer now features a professional "Inspector" popup for precise c
 - **Bubble UI**: Semi-transparent background with a modern, high-contrast aesthetic.
 
 ## Verification
-- **Build Status**: ✅ Success (Release/VST3)
+- **Build Status**: Success (Release/VST3)
 - **Interaction**: Verified left-click to open, numerical entry to move nodes, and type switching.

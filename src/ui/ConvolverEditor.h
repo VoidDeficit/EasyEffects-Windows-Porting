@@ -26,6 +26,9 @@ private:
     std::unique_ptr<GenericModuleEditor> genericEditor;
     std::unique_ptr<juce::FileChooser> fileChooser;
 
+    static constexpr int irCardHeight = 96;
+    juce::Rectangle<int> irCard;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ConvolverEditor)
 };
 

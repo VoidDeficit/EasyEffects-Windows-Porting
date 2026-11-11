@@ -98,10 +98,10 @@ juce::var PresetManager::serializeChain() {
             }
         }
         
-        // Slot mix
-        std::string mixId = prefix + ".mix";
-        if (auto* val = processor.parameters.getRawParameterValue(mixId))
-            paramsObj->setProperty("mix", val->load());
+        // Slot-level floats (mix, input gain, output gain)
+        for (const auto& s : EffectRegistry::slotLevelFloatParams())
+            if (auto* val = processor.parameters.getRawParameterValue(prefix + "." + s))
+                paramsObj->setProperty(juce::String(s), val->load());
 
         sObj->setProperty("params", paramsObj.get());
 
@@ -145,7 +145,7 @@ void PresetManager::deserializeChain(const juce::var& json) {
                 for (auto& prop : pObj->getProperties()) {
                     std::string suffix = prop.name.toString().toStdString();
                     std::string fullId;
-                    if (suffix == "mix") fullId = prefix + ".mix";
+                    if (EffectRegistry::isSlotLevelFloatParam(suffix)) fullId = prefix + "." + suffix;
                     else fullId = prefix + "." + typeId + "." + suffix;
 
                     if (auto* p = processor.parameters.getParameter(fullId))
@@ -195,10 +195,10 @@ void PresetManager::saveModulePreset(int slotIndex, const std::string& name) {
                 }
             }
             
-            // Slot mix
-            std::string mixId = prefix + ".mix";
-            if (auto* val = processor.parameters.getRawParameterValue(mixId))
-                paramsObj->setProperty("mix", val->load());
+            // Slot-level floats (mix, input gain, output gain)
+            for (const auto& s : EffectRegistry::slotLevelFloatParams())
+                if (auto* val = processor.parameters.getRawParameterValue(prefix + "." + s))
+                    paramsObj->setProperty(juce::String(s), val->load());
 
             sObj->setProperty("params", paramsObj.get());
 
@@ -236,7 +236,7 @@ void PresetManager::loadModulePreset(int slotIndex, const std::string& name) {
                     for (auto& prop : paramData->getProperties()) {
                         std::string suffix = prop.name.toString().toStdString();
                         std::string fullId;
-                        if (suffix == "mix") fullId = prefix + ".mix";
+                        if (EffectRegistry::isSlotLevelFloatParam(suffix)) fullId = prefix + "." + suffix;
                         else fullId = prefix + "." + slot.typeId + "." + suffix;
 
                         if (auto* p = processor.parameters.getParameter(fullId))

@@ -44,6 +44,9 @@ ConvolverEditor::ConvolverEditor(EasyEffectsAudioProcessor& proc, int slotIdx)
         }
     };
 
+    getProperties().set("preferredHeight",
+        irCardHeight + (int)genericEditor->getProperties().getWithDefault("preferredHeight", 400));
+
     startTimerHz(10);
 }
 
@@ -63,28 +66,24 @@ void ConvolverEditor::timerCallback() {
 
 void ConvolverEditor::paint(juce::Graphics& g) {
     g.fillAll(eeval::theme::bgBase);
-    
-    // Draw a nice background panel for the IR loader
-    auto r = getLocalBounds().removeFromTop(100).reduced(10);
-    g.setColour(eeval::theme::bgSurface);
-    g.fillRoundedRectangle(r.toFloat(), 6.0f);
-    
-    g.setColour(eeval::theme::borderSubtle);
-    g.drawRoundedRectangle(r.toFloat(), 6.0f, 1.0f);
+    eeval::theme::drawCard(g, irCard, "Impulse response");
 }
 
 void ConvolverEditor::resized() {
     auto area = getLocalBounds();
-    
-    auto irPanel = area.removeFromTop(100).reduced(20);
-    auto topRow = irPanel.removeFromTop(30);
-    
-    loadBtn.setBounds(topRow.removeFromLeft(120));
-    topRow.removeFromLeft(10);
-    clearBtn.setBounds(topRow.removeFromLeft(80));
-    
-    irPanel.removeFromTop(10);
-    fileLabel.setBounds(irPanel);
+
+    irCard = area.removeFromTop(irCardHeight).reduced(14, 0).withTrimmedTop(10);
+
+    // Mirror theme::drawCard's content area
+    auto content = irCard.reduced(12, 8);
+    content.removeFromTop(26 + 4);
+    auto row = content.removeFromTop(30);
+
+    loadBtn.setBounds(row.removeFromLeft(130));
+    row.removeFromLeft(8);
+    clearBtn.setBounds(row.removeFromLeft(80));
+    row.removeFromLeft(14);
+    fileLabel.setBounds(row);
 
     if (genericEditor) {
         genericEditor->setBounds(area);

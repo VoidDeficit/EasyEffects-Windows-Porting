@@ -12,7 +12,7 @@ You must NOT rush into coding.
 
 ---
 
-# 📁 PROJECT CONTEXT
+# PROJECT CONTEXT
 
 I have 2 folders:
 
@@ -25,7 +25,7 @@ I have 2 folders:
 
 ---
 
-# 🚫 CRITICAL RULES
+# CRITICAL RULES
 
 * DO NOT attempt to port PipeWire
 * DO NOT build custom WASAPI COM layers unless absolutely required
@@ -36,7 +36,7 @@ I have 2 folders:
 
 ---
 
-# 🎯 CORE ARCHITECTURE DECISION (MANDATORY)
+# CORE ARCHITECTURE DECISION (MANDATORY)
 
 This project MUST use:
 
@@ -47,7 +47,7 @@ Use JUCE as the foundation.
 
 ---
 
-# ⚠️ IMPORTANT ARCHITECTURAL CONSTRAINT
+# IMPORTANT ARCHITECTURAL CONSTRAINT
 
 JUCE DOES NOT provide system-wide audio routing.
 
@@ -59,7 +59,7 @@ Therefore:
 
 ---
 
-# 🎯 OBJECTIVE (REDEFINED)
+# OBJECTIVE (REDEFINED)
 
 Build a **high-quality standalone audio processor** first:
 
@@ -73,7 +73,7 @@ System-wide routing will be handled later via:
 
 ---
 
-# 🧩 STEP 1 — FULL ANALYSIS
+# STEP 1 — FULL ANALYSIS
 
 ## 1. Analyze `easyeffects/`
 
@@ -119,7 +119,7 @@ Include:
 
 ---
 
-# 🏗️ STEP 2 — JUCE ARCHITECTURE DESIGN
+# STEP 2 — JUCE ARCHITECTURE DESIGN
 
 Design a JUCE-based system:
 
@@ -141,7 +141,7 @@ Save:
 
 ---
 
-# 🗂️ STEP 3 — NEW PROJECT SETUP
+# STEP 3 — NEW PROJECT SETUP
 
 Create a clean project:
 
@@ -157,7 +157,7 @@ DO NOT reuse broken code unless validated
 
 ---
 
-# 📅 STEP 4 — IMPLEMENTATION ROADMAP
+# STEP 4 — IMPLEMENTATION ROADMAP
 
 Define phases:
 
@@ -223,7 +223,7 @@ Save:
 
 ---
 
-# 🔁 STEP 5 — DEVELOPMENT RULES
+# STEP 5 — DEVELOPMENT RULES
 
 For EACH phase:
 
@@ -238,7 +238,7 @@ For EACH phase:
 
 ---
 
-# 🧾 LOGGING SYSTEM
+# LOGGING SYSTEM
 
 Maintain:
 
@@ -259,7 +259,7 @@ Maintain:
 
 ---
 
-# 🧠 FAILURE HANDLING PROTOCOL
+# FAILURE HANDLING PROTOCOL
 
 If:
 
@@ -276,7 +276,7 @@ Then:
 
 ---
 
-# 🚀 EXECUTION ORDER
+# EXECUTION ORDER
 
 1. Analysis
 2. Architecture
@@ -286,7 +286,7 @@ STOP and wait for approval before coding.
 
 ---
 
-# 🧪 SUCCESS CRITERIA
+# SUCCESS CRITERIA
 
 * clean architecture
 * stable audio processing

@@ -5,7 +5,13 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Add external dependencies
-add_subdirectory(external/rnnoise)
+# RNNoise (mumble-voip fork) ships no CMakeLists, so build it here.
+# USE_MALLOC replaces the C99 VLAs that MSVC doesn't support.
+file(GLOB RNNOISE_SOURCES CONFIGURE_DEPENDS external/rnnoise/src/*.c)
+add_library(rnnoise STATIC ${RNNOISE_SOURCES})
+target_include_directories(rnnoise PUBLIC external/rnnoise/include PRIVATE external/rnnoise/src)
+target_compile_definitions(rnnoise PRIVATE USE_MALLOC _USE_MATH_DEFINES)
+set_target_properties(rnnoise PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set(SOUNDSTRETCH OFF CACHE BOOL "" FORCE)
 add_subdirectory(external/soundtouch)
 
@@ -70,6 +76,13 @@ target_sources(EasyEffects
     src/ui/ConvolverEditor.cpp
     src/ui/GenericModuleEditor.cpp
     src/PresetManager.cpp
+    src/audio/VirtualAudioRouter.cpp
+    src/audio/WindowsAudioEndpoints.cpp
+    src/audio/SecondaryPipeline.cpp
+    src/audio/AsioHost.cpp
+    src/audio/SarAutoSetup.cpp
+    src/audio/WindowsAudioInput.cpp
+    src/audio/WindowsAudioOutput.cpp
 )
 
 # Link JUCE modules
@@ -90,6 +103,13 @@ target_include_directories(EasyEffects PRIVATE src)
 
 # Add compile definitions
 target_compile_definitions(EasyEffects PUBLIC JUCE_VST3_CAN_REPLACE_VST2=0)
+
+# ASIO support (lets EasyEffects host ASIO drivers such as Synchronous Audio
+# Router). JUCE bundles the Steinberg ASIO interface headers, which Steinberg
+# licenses under GPLv3 (this project's licence) or its proprietary licence.
+if(WIN32)
+    target_compile_definitions(EasyEffects PUBLIC JUCE_ASIO=1)
+endif()
 
 # Generate JuceHeader.h
 juce_generate_juce_header(EasyEffects)

@@ -72,6 +72,19 @@ public:
     void setDryWetMix(float mix) { dryWetMix = juce::jlimit(0.0f, 1.0f, mix); }
     float getDryWetMix() const { return dryWetMix; }
 
+    // --- Per-effect input/output gain and level meters (set/driven by EffectChain) ---
+
+    // Linear gains applied around process() by EffectChain.
+    void setSlotGains(float inLinear, float outLinear) { slotInGain = inLinear; slotOutGain = outLinear; }
+    float getSlotInGain() const  { return slotInGain; }
+    float getSlotOutGain() const { return slotOutGain; }
+
+    // Peak levels of the last block in dBFS, per channel (0 = L, 1 = R). Read by the UI.
+    void setMeterIn(int ch, float db)  { if (ch >= 0 && ch < 2) meterInDb[ch].store(db); }
+    void setMeterOut(int ch, float db) { if (ch >= 0 && ch < 2) meterOutDb[ch].store(db); }
+    float getMeterInDb(int ch) const   { return (ch >= 0 && ch < 2) ? meterInDb[ch].load() : -120.0f; }
+    float getMeterOutDb(int ch) const  { return (ch >= 0 && ch < 2) ? meterOutDb[ch].load() : -120.0f; }
+
     // Slot-level identifier (e.g., "slot3")
     void setSlotPrefix(const std::string& prefix) { slotPrefix = prefix; }
     const std::string& getSlotPrefix() const { return slotPrefix; }
@@ -102,6 +115,11 @@ protected:
     std::string slotPrefix;      // e.g., "slot3"
     std::string slotParamPrefix; // e.g., "slot3.compressor"
     std::atomic<float> inputLevel { 0.0f };
+
+    float slotInGain = 1.0f;
+    float slotOutGain = 1.0f;
+    std::atomic<float> meterInDb[2]  { { -120.0f }, { -120.0f } };
+    std::atomic<float> meterOutDb[2] { { -120.0f }, { -120.0f } };
 
     // Pre-allocated in prepare() for dry/wet blending
     juce::AudioBuffer<float> dryBuffer;

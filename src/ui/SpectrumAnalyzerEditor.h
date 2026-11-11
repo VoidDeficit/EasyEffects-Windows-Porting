@@ -8,14 +8,16 @@ namespace eeval {
 namespace ui {
 
 /**
- * SpectrumAnalyzerEditor - A global bar-style spectrum visualizer.
- * Updated to use the professional lock-free SpectrumAnalyzer engine.
+ * SpectrumAnalyzerEditor - full-width bar spectrum in the EasyEffects style:
+ * green bars on black, logarithmic 20 Hz – 20 kHz axis, and a frequency scale
+ * underneath labelled like EasyEffects (20, 37, 70, 132 ... 10.7k, Hz).
  */
 class SpectrumAnalyzerEditor : public juce::Component, private juce::Timer {
 public:
-    SpectrumAnalyzerEditor(EasyEffectsAudioProcessor& p) 
+    explicit SpectrumAnalyzerEditor(EasyEffectsAudioProcessor& p)
         : processor(p)
     {
+        setOpaque(true);
         startTimerHz(30);
     }
 
@@ -23,47 +25,61 @@ public:
 
     void paint(juce::Graphics& g) override {
         auto area = getLocalBounds();
-        
-        g.setColour(theme::bgSurface); 
-        g.fillRoundedRectangle(area.toFloat(), 6.0f);
-        
-        area.reduce(10, 10);
-        float width = (float)area.getWidth();
-        float height = (float)area.getHeight();
-        float startY = (float)area.getBottom();
+        g.fillAll(theme::spectrumBg);
 
-        g.setColour(juce::Colour::fromString("#FF2ED573")); // EasyEffects Green
+        auto scale = area.removeFromBottom(scaleHeight);
+        auto plot = area.reduced(4, 6);
 
-        int numBars = 64; 
-        float rectWidth = (width / (float)numBars) - 2.0f;
-        if (rectWidth < 1.0f) rectWidth = 1.0f;
+        // --- bars ---------------------------------------------------------
+        const auto& data = processor.getSpectrumAnalyzer().getDisplayData();
+        const int bins = (int)data.size();
+        double sr = processor.getSampleRate();
+        if (sr <= 0.0) sr = 48000.0;
+        const double binHz = sr / (double)dsp::SpectrumAnalyzer::fftSize;
 
-        auto& analyzer = processor.getSpectrumAnalyzer();
-        auto& data = analyzer.getDisplayData();
+        const int numBars = juce::jlimit(32, 160, plot.getWidth() / 6);
+        const float slot = (float)plot.getWidth() / (float)numBars;
+        const float gap = slot > 4.0f ? 2.0f : 1.0f;
+        const float barW = juce::jmax(1.0f, slot - gap);
+        const float h = (float)plot.getHeight();
 
+        g.setColour(theme::spectrumBar);
         for (int i = 0; i < numBars; ++i) {
-            // Logarithmic mapping for bars
-            float linearParam = (float)i / (float)numBars;
-            float skew = std::pow(linearParam, 2.0f); 
-            int dataIdx = (int)(skew * (float)data.size());
-            dataIdx = juce::jlimit(0, (int)data.size() - 1, dataIdx);
+            // Frequency edges of this bar on a log axis.
+            const double f0 = minHz * std::pow(maxHz / minHz, (double)i / numBars);
+            const double f1 = minHz * std::pow(maxHz / minHz, (double)(i + 1) / numBars);
+            int b0 = juce::jlimit(0, bins - 1, (int)std::floor(f0 / binHz));
+            int b1 = juce::jlimit(0, bins - 1, (int)std::ceil(f1 / binHz));
+            if (b1 < b0) b1 = b0;
 
-            float dB = data[dataIdx];
-            float mappedLevel = juce::jmap<float>(dB, -100.0f, 0.0f, 0.0f, 1.0f);
+            float db = -100.0f;
+            for (int b = b0; b <= b1; ++b)
+                db = juce::jmax(db, data[(size_t)b]);
 
-            float barHeight = mappedLevel * height;
-            barHeight = juce::jlimit(2.0f, height, barHeight);
-
-            float x = area.getX() + i * (rectWidth + 2.0f);
-            float y = startY - barHeight;
-
-            g.fillRoundedRectangle(x, y, rectWidth, barHeight, 2.0f);
+            const float level = juce::jlimit(0.0f, 1.0f, juce::jmap(db, -90.0f, -10.0f, 0.0f, 1.0f));
+            const float barH = level * h;
+            if (barH < 1.0f)
+                continue;   // silence: draw nothing, like EasyEffects
+            const float x = (float)plot.getX() + (float)i * slot;
+            g.fillRect(x, (float)plot.getBottom() - barH, barW, barH);
         }
-        
+
+        // --- frequency scale ------------------------------------------------
+        g.setColour(theme::bgToolbar);
+        g.fillRect(scale);
         g.setColour(theme::textSecondary);
-        g.setFont(12.0f);
-        g.drawText("20 Hz", area.getX(), area.getBottom() - 15, 50, 15, juce::Justification::bottomLeft);
-        g.drawText("20 kHz", area.getRight() - 50, area.getBottom() - 15, 50, 15, juce::Justification::bottomRight);
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+
+        // 11 equal steps on the log axis, exactly like EasyEffects' labels.
+        constexpr int steps = 11;
+        const float w = (float)plot.getWidth();
+        for (int k = 0; k < steps; ++k) {
+            const double f = minHz * std::pow(maxHz / minHz, (double)k / steps);
+            const float x = (float)plot.getX() + w * (float)k / (float)steps;
+            g.drawText(formatHz(f), juce::Rectangle<float>(x + 2.0f, (float)scale.getY(), 60.0f, (float)scale.getHeight()),
+                       juce::Justification::centredLeft, false);
+        }
+        g.drawText("Hz", scale.withTrimmedRight(6), juce::Justification::centredRight, false);
     }
 
     void timerCallback() override {
@@ -71,7 +87,18 @@ public:
         repaint();
     }
 
+    static constexpr int scaleHeight = 16;
+
 private:
+    static juce::String formatHz(double f) {
+        if (f >= 1000.0)
+            return juce::String(f / 1000.0, 1) + "k";
+        return juce::String(juce::roundToInt(f));
+    }
+
+    static constexpr double minHz = 20.0;
+    static constexpr double maxHz = 20000.0;
+
     EasyEffectsAudioProcessor& processor;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumAnalyzerEditor)

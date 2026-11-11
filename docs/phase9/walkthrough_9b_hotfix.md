@@ -2,13 +2,13 @@
 
 This document logs the critical architectural fix applied during Phase 9B to resolve runtime crashes and parameter binding inconsistencies.
 
-## 🔴 The Issue
+## The Issue
 The application crashed when selecting any of the 8 new DSP modules. 
 - **Cause**: Null-pointer dereference in `updateParameters`.
 - **Root Cause**: Mismatch between registered IDs (`slotX.mix`) and accessed IDs (`slotX.typeId.mix`).
 - **Legacy Impact**: Mix and Bypass controls were silently broken for all existing modules.
 
-## 🟢 The Solution
+## The Solution
 I implemented a core architectural change to how parameter IDs are managed in the DSP layer.
 
 ### 1. Infrastructure Update
@@ -25,7 +25,7 @@ Refactored **all 21 DSP modules** with the following strict stability rules:
 - **`GenericModuleEditor`**: Now manually includes the **Dry/Wet Mix** slider for all modules.
 - **`SidebarRow`**: Verified to work with the standardized `slotX.bypass` ID.
 
-## 🧪 Verification Results
+## Verification Results
 - [x] **Stable Selection**: Switching between any of the 21 effects no longer causes crashes.
 - [x] **Mix/Bypass Functional**: Verified that the mix slider and bypass toggle correctly affect the audio processing for all modules.
 - [x] **Build Standalone**: Successfully compiled `EasyEffects.exe` in Release mode.

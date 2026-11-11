@@ -59,6 +59,20 @@ private:
 
     std::array<Slot, MAX_SLOTS> slots;
 
+    // Cached raw pointers to the per-slot "slotN.inGain" / "slotN.outGain"
+    // parameters (resolved once; parameter objects live as long as the APVTS).
+    std::array<std::atomic<float>*, MAX_SLOTS> inGainParams {};
+    std::array<std::atomic<float>*, MAX_SLOTS> outGainParams {};
+    // Bypass and dry/wet are also applied here so *every* module honours them,
+    // even ones whose updateParameters() forgets to (RNNoise, Pitch Shift).
+    std::array<std::atomic<float>*, MAX_SLOTS> bypassParams {};
+    std::array<std::atomic<float>*, MAX_SLOTS> mixParams {};
+    bool gainParamsResolved = false;
+
+    // Writes per-channel peak (dBFS) of the buffer into a meter setter.
+    template <typename Setter>
+    static void measurePeaks(const juce::AudioBuffer<float>& buffer, Setter&& set);
+
     // Cached process spec for preparing newly added modules
     juce::dsp::ProcessSpec cachedSpec{0, 0, 0};
     bool isPrepared = false;

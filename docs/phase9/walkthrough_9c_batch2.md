@@ -22,7 +22,7 @@ The RNNoise source code relies on Variable Length Arrays (VLAs), which are not s
     *   High-quality pitch transposition (-12 to +12 semitones).
     *   Handles interleaved samples and reports internal latency accurately to the host.
 
-## 🛠 Technical Details
+## Technical Details
 
 ### Registry Integration
 The new effects are registered in `EffectRegistry.cpp` and available for use in any slot:
@@ -39,7 +39,7 @@ A full project build was performed, verifying that the patched external librarie
 
 ---
 
-## 🧪 Verification Results
+## Verification Results
 
 ### Automated Verification
 *   **Build**: MSVC 2022 Release build successful.

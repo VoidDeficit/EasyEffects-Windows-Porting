@@ -2,7 +2,7 @@
 
 We have successfully implemented the second batch of Pure DSP effects. These 4 modules add sophisticated spatial, dynamic, and perceptual processing capabilities to the EasyEffects Windows port.
 
-## 🚀 Accomplishments
+## Accomplishments
 
 ### 1. Crossfeed [NEW]
 Simulates speaker imaging on headphones by introducing frequency-dependent crosstalk.
@@ -35,7 +35,7 @@ Perceptual loudness normalization using K-weighting filters.
 
 ---
 
-## 🛠 Technical Changes
+## Technical Changes
 
 ### [NEW] DSP Modules
 - `CrossfeedModule.h/cpp`
@@ -50,7 +50,7 @@ Perceptual loudness normalization using K-weighting filters.
 
 ---
 
-## 🧪 Validation Results
+## Validation Results
 
 - **Builds**: Both VST3 and Standalone builds succeeded with exit code 0.
 - **Integration**: All effects are visible and selectable in the UI across all 16 slots.
@@ -58,7 +58,7 @@ Perceptual loudness normalization using K-weighting filters.
 
 ---
 
-## 📅 Status: Phase 9B Complete
+## Status: Phase 9B Complete
 With the completion of Batch 1 and Batch 2, we have now implemented 8 pure DSP effects:
 1. Stereo Tools
 2. Expander

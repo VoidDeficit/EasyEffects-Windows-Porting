@@ -67,11 +67,11 @@ EffectChain (16-slot array)
 ```
 
 ### Current Status
-- ✅ Dynamic chain fully working: add, remove, reorder effects at runtime
-- ✅ Parameter values follow effects during reorder
-- ✅ UI updates instantly on all operations
-- ✅ Presets save/restore chain structure via CHAIN_ORDER property
-- ✅ Default chain: Gate → Compressor → Limiter → Gain
+- Dynamic chain fully working: add, remove, reorder effects at runtime
+- Parameter values follow effects during reorder
+- UI updates instantly on all operations
+- Presets save/restore chain structure via CHAIN_ORDER property
+- Default chain: Gate → Compressor → Limiter → Gain
 
 ### Next Steps
 - **Phase 9B:** Implement 8 pure DSP effects (Stereo Tools, Expander, Crusher, etc.)

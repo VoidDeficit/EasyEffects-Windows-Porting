@@ -104,10 +104,13 @@ void EasyEffectsAudioProcessor::removeEffect(int slotIndex) {
                     if (srcBypass && dstBypass)
                         dstBypass->setValueNotifyingHost(srcBypass->load() > 0.5f ? 1.0f : 0.0f);
 
-                    auto* srcMix = parameters.getRawParameterValue(eeval::EffectRegistry::slotPrefix(i + 1) + ".mix");
-                    auto* dstMix = parameters.getParameter(newPrefix + ".mix");
-                    if (srcMix && dstMix)
-                        dstMix->setValueNotifyingHost(dstMix->convertTo0to1(srcMix->load()));
+                    // Copy slot-level floats (mix, input gain, output gain)
+                    for (const auto& s : eeval::EffectRegistry::slotLevelFloatParams()) {
+                        auto* srcV = parameters.getRawParameterValue(eeval::EffectRegistry::slotPrefix(i + 1) + "." + s);
+                        auto* dstV = parameters.getParameter(newPrefix + "." + s);
+                        if (srcV && dstV)
+                            dstV->setValueNotifyingHost(dstV->convertTo0to1(srcV->load()));
+                    }
                 }
 
                 dspChain.setSlotTypeId(i, fromTypeId);
@@ -151,8 +154,10 @@ void EasyEffectsAudioProcessor::moveEffect(int slotIndex, int direction) {
         // Save common params (bypass, mix)
         auto* bp = parameters.getRawParameterValue(prefix + ".bypass");
         if (bp) dest["bypass"] = bp->load();
-        auto* mx = parameters.getRawParameterValue(prefix + ".mix");
-        if (mx) dest["mix"] = mx->load();
+        for (const auto& s : eeval::EffectRegistry::slotLevelFloatParams()) {
+            auto* v = parameters.getRawParameterValue(prefix + "." + s);
+            if (v) dest[s] = v->load();
+        }
 
         // Save type-specific params
         const auto* desc = eeval::EffectRegistry::findType(tid);
@@ -180,7 +185,8 @@ void EasyEffectsAudioProcessor::moveEffect(int slotIndex, int direction) {
         };
 
         if (src.count("bypass")) setParam(prefix + ".bypass", src.at("bypass"));
-        if (src.count("mix")) setParam(prefix + ".mix", src.at("mix"));
+        for (const auto& s : eeval::EffectRegistry::slotLevelFloatParams())
+            if (src.count(s)) setParam(prefix + "." + s, src.at(s));
 
         const auto* desc = eeval::EffectRegistry::findType(tid);
         if (desc) {
@@ -355,13 +361,15 @@ void EasyEffectsAudioProcessor::setStateInformation(const void* data, int sizeIn
             auto newState = juce::ValueTree::fromXml(*xmlState);
 
             // Restore chain structure
+            const bool hasChain = newState.hasProperty("CHAIN_ORDER");
             juce::String chainStr = newState.getProperty("CHAIN_ORDER", "");
             selectedEditorIndex = newState.getProperty("SELECTED_EDITOR", 0);
 
             parameters.replaceState(newState);
 
-            // Rebuild chain from saved structure
-            if (chainStr.isNotEmpty()) {
+            // Rebuild chain from saved structure. An empty saved chain is a real
+            // state ("no effects") and must not fall back to the default chain.
+            if (hasChain) {
                 // Clear existing chain
                 for (int i = 0; i < eeval::EffectChain::MAX_SLOTS; ++i)
                     dspChain.clearSlot(i);

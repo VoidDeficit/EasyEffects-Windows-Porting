@@ -11,12 +11,17 @@ VisualEqualizerEditor::VisualEqualizerEditor(EasyEffectsAudioProcessor& p, juce:
     addAndMakeVisible(plot);
 
     titleLabel.setText("Parametric Equalizer", juce::dontSendNotification);
-    titleLabel.setFont(juce::Font(16.0f, juce::Font::bold));
+    titleLabel.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
+    titleLabel.setColour(juce::Label::textColourId, theme::textPrimary);
     addAndMakeVisible(titleLabel);
+
+    getProperties().set("preferredHeight", 470);
 
     for (int i = 0; i < 10; ++i) {
         auto node = std::make_unique<EQNodeComponent>(apvts, slotIdx, i, plot);
-        addAndMakeVisible(*node);
+        // Children of the plot: node coordinates are then plot-relative, which is
+        // what EQNodeComponent's drag maths and setCentreRelative() assume.
+        plot.addAndMakeVisible(*node);
         nodes.push_back(std::move(node));
     }
 
@@ -28,18 +33,25 @@ VisualEqualizerEditor::VisualEqualizerEditor(EasyEffectsAudioProcessor& p, juce:
 }
 
 void VisualEqualizerEditor::paint(juce::Graphics& g) {
-    g.fillAll(juce::Colour(0xff252525));
+    g.fillAll(theme::bgBase);
+    theme::drawCard(g, plotCard, "Bands");
 }
 
 void VisualEqualizerEditor::resized() {
-    auto area = getLocalBounds().reduced(10);
-    
-    auto header = area.removeFromTop(30);
-    titleLabel.setBounds(header.removeFromLeft(200));
-    addBandBtn.setBounds(header.removeFromRight(100));
-    presetBtn.setBounds(header.removeFromRight(80).reduced(4, 0));
+    auto area = getLocalBounds().reduced(14, 10);
 
-    plot.setBounds(area);
+    auto header = area.removeFromTop(34);
+    titleLabel.setBounds(header.removeFromLeft(260));
+    addBandBtn.setBounds(header.removeFromRight(110).withSizeKeepingCentre(110, 30));
+    header.removeFromRight(8);
+    presetBtn.setBounds(header.removeFromRight(96).withSizeKeepingCentre(96, 30));
+    area.removeFromTop(12);
+
+    // The graph sits inside an EasyEffects-style card.
+    plotCard = area;
+    auto content = plotCard.reduced(12, 8);
+    content.removeFromTop(26 + 4);
+    plot.setBounds(content);
 
     // Position nodes
     for (auto& node : nodes) {

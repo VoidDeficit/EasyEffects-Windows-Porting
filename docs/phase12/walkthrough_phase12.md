@@ -33,7 +33,7 @@ Phase 12 focused on usability, removing broken UI elements, and creating a profe
 
 ### 5. Audio Device Monitor
 - **Approach**: Leverages JUCE's built-in standalone "Options" button for audio device selection.
-- **Footer Hint**: Shows `🔊 Use Options button to set Input/Output devices`.
+- **Footer Hint**: Shows `Use Options button to set Input/Output devices`.
 - **User Workflow**: Set Input = Mic, Output = Speakers in Options to monitor through effects.
 
 ## Files Modified
@@ -45,7 +45,7 @@ Phase 12 focused on usability, removing broken UI elements, and creating a profe
 - `GenericModuleEditor.cpp` — Upgraded module preset menu with delete support
 
 ## Verification
-- **Build**: ✅ Release/VST3 compiled successfully
+- **Build**: Release/VST3 compiled successfully
 - **Bypass**: Tested toggle — clean pass-through with no clicks
 - **Presets**: Save, overwrite, delete, and load all working correctly
 - **EQ Presets**: Nodes reposition correctly after loading

@@ -33,6 +33,7 @@ private:
     juce::TextButton addBandBtn { "+ Add Band" };
     juce::TextButton presetBtn  { "Presets" };
     juce::Label titleLabel;
+    juce::Rectangle<int> plotCard;
 
     void addNextBand();
     void showPresetMenu();

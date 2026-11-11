@@ -20,14 +20,13 @@ GenericModuleEditor::GenericModuleEditor(juce::AudioProcessorValueTreeState& sta
     for (const auto& pdesc : desc->params) {
         std::string fullId = prefix + "." + pdesc.suffix;
         auto* slider = new juce::Slider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
-        slider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 80, 28);
-        slider->setTextValueSuffix(" " + pdesc.unit);
-        slider->setColour(juce::Slider::textBoxOutlineColourId, theme::borderSubtle);
-        slider->setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xFF1A1A1A));
+        slider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 96, rowHeight - 4);
+        slider->setTextValueSuffix(pdesc.unit.empty() ? juce::String() : " " + juce::String(pdesc.unit));
 
         auto* label = new juce::Label(fullId + "_label", pdesc.label);
         label->setJustificationType(juce::Justification::centredLeft);
-        label->setColour(juce::Label::textColourId, theme::textSecondary);
+        label->setColour(juce::Label::textColourId, theme::textPrimary);
+        label->setFont(juce::Font(juce::FontOptions(14.0f)));
 
         addAndMakeVisible(slider);
         addAndMakeVisible(label);
@@ -47,7 +46,8 @@ GenericModuleEditor::GenericModuleEditor(juce::AudioProcessorValueTreeState& sta
 
         auto* label = new juce::Label(fullId + "_label", cdesc.label);
         label->setJustificationType(juce::Justification::centredLeft);
-        label->setColour(juce::Label::textColourId, theme::textSecondary);
+        label->setColour(juce::Label::textColourId, theme::textPrimary);
+        label->setFont(juce::Font(juce::FontOptions(14.0f)));
         addAndMakeVisible(label);
 
         choiceLabels.add(label);
@@ -59,12 +59,15 @@ GenericModuleEditor::GenericModuleEditor(juce::AudioProcessorValueTreeState& sta
     if (effectTypeId != "levelmeter") {
         std::string mixId = "slot" + std::to_string(slotIndex) + ".mix";
         auto* mixSlider = new juce::Slider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
-        mixSlider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 80, 28);
+        mixSlider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 96, rowHeight - 4);
         mixSlider->setTextValueSuffix(" %");
         addAndMakeVisible(mixSlider);
         sliders.add(mixSlider);
-        labels.add(new juce::Label(mixId + "_label", "Dry/Wet Mix"));
-        addAndMakeVisible(labels.getLast());
+        auto* mixLabel = new juce::Label(mixId + "_label", "Dry/Wet Mix");
+        mixLabel->setColour(juce::Label::textColourId, theme::textPrimary);
+        mixLabel->setFont(juce::Font(juce::FontOptions(14.0f)));
+        labels.add(mixLabel);
+        addAndMakeVisible(mixLabel);
         attachments.add(new juce::AudioProcessorValueTreeState::SliderAttachment(apvts, mixId, *mixSlider));
     }
 
@@ -86,7 +89,23 @@ GenericModuleEditor::GenericModuleEditor(juce::AudioProcessorValueTreeState& sta
         addAndMakeVisible(*dynamicsViz);
     }
 
+    if (showDynamicsViz)   sideCardTitle = "Dynamics";
+    else if (showVadMeter) sideCardTitle = "Voice activity";
+
+    // Lets the EffectPage / viewport grow to fit every control row.
+    getProperties().set("preferredHeight", computePreferredHeight());
+
     startTimerHz(30); // 30 FPS updates
+}
+
+int GenericModuleEditor::computePreferredHeight() const {
+    const int rows = comboBoxes.size() + sliders.size();
+    const int header = 46;
+    const int cardChrome = 8 + 26 + 4 + 8 + 12;   // card padding + title + margins
+    int h = header + cardChrome + rows * (rowHeight + rowGap) + 12;
+    if (showDynamicsViz)
+        h = juce::jmax(h, header + cardChrome + 260);
+    return h;
 }
 
 void GenericModuleEditor::timerCallback() {
@@ -162,53 +181,70 @@ void GenericModuleEditor::showPresetMenu() {
 }
 
 void GenericModuleEditor::paint(juce::Graphics& g) {
-    auto area = getLocalBounds();
-    auto titleArea = area.removeFromTop(40);
-    g.setColour(theme::textPrimary);
-    g.setFont(18.0f);
-    g.drawText(displayName, titleArea.reduced(20, 0), juce::Justification::centredLeft, true);
+    g.fillAll(theme::bgBase);
 
-    auto cardArea = area.reduced(15, 5);
-    g.setColour(theme::bgCard);
-    g.fillRoundedRectangle(cardArea.toFloat(), 8.0f);
-    g.setColour(theme::borderSubtle);
-    g.drawRoundedRectangle(cardArea.toFloat(), 8.0f, 1.0f);
+    // Page title (effect name), like the plugin header in EasyEffects
+    g.setColour(theme::textPrimary);
+    g.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
+    g.drawText(displayName, headerArea, juce::Justification::centredLeft, true);
+
+    theme::drawCard(g, controlsCard, "Controls");
+    if (!sideCard.isEmpty())
+        theme::drawCard(g, sideCard, sideCardTitle);
 }
 
 void GenericModuleEditor::resized() {
-    auto area = getLocalBounds();
-    auto titleArea = area.removeFromTop(40);
-    presetBtn.setBounds(titleArea.removeFromRight(100).reduced(10, 8));
+    auto area = getLocalBounds().reduced(14, 10);
 
-    auto cardArea = area.reduced(15, 5);
-    
-    if (showGrMeter || showVadMeter) {
-        auto meterArea = cardArea.removeFromRight(25).reduced(5, 40);
-        if (showGrMeter) grMeter.setBounds(meterArea);
-        if (showVadMeter) vadMeter.setBounds(meterArea);
+    // Header: title + Presets button
+    headerArea = area.removeFromTop(34);
+    presetBtn.setBounds(headerArea.removeFromRight(96).withSizeKeepingCentre(96, 30));
+    area.removeFromTop(12);
+
+    // Cards: "Controls" on the left, optional side card on the right
+    const bool hasSide = showDynamicsViz || showVadMeter;
+    if (hasSide) {
+        const int sideW = showDynamicsViz ? juce::jlimit(240, 420, area.getWidth() * 2 / 5) : 150;
+        sideCard = area.removeFromRight(sideW);
+        area.removeFromRight(12);
+    } else {
+        sideCard = {};
     }
+    controlsCard = area;
 
-    if (showDynamicsViz && dynamicsViz) {
-        dynamicsViz->setBounds(cardArea.removeFromBottom(140).reduced(20, 10));
-    }
+    // --- Controls card content (mirror of theme::drawCard's content area) ---
+    auto inner = controlsCard.reduced(12, 8);
+    inner.removeFromTop(26 + 4);
+    inner.removeFromTop(4);
 
-    auto innerArea = cardArea.reduced(15, 35);
-    int x = innerArea.getX();
-    int y = innerArea.getY();
-    int rowHeight = 35;
-    int labelWidth = 120;
-    int sliderWidth = innerArea.getWidth() - labelWidth - 10;
+    auto placeRow = [&inner](juce::Component& label, juce::Component& control, int maxControlWidth) {
+        auto row = inner.removeFromTop(rowHeight);
+        inner.removeFromTop(rowGap);
+        label.setBounds(row.removeFromLeft(labelWidth));
+        row.removeFromLeft(8);
+        control.setBounds(maxControlWidth > 0 ? row.removeFromLeft(juce::jmin(row.getWidth(), maxControlWidth)) : row);
+    };
 
-    for (int i = 0; i < comboBoxes.size(); ++i) {
-        choiceLabels[i]->setBounds(x, y, labelWidth, rowHeight);
-        comboBoxes[i]->setBounds(x + labelWidth + 10, y, juce::jmin(sliderWidth, 200), rowHeight);
-        y += rowHeight + 8;
-    }
+    for (int i = 0; i < comboBoxes.size(); ++i)
+        placeRow(*choiceLabels[i], *comboBoxes[i], 240);
 
-    for (int i = 0; i < sliders.size(); ++i) {
-        labels[i]->setBounds(x, y, labelWidth, rowHeight);
-        sliders[i]->setBounds(x + labelWidth + 10, y, sliderWidth, rowHeight);
-        y += rowHeight + 8;
+    for (int i = 0; i < sliders.size(); ++i)
+        placeRow(*labels[i], *sliders[i], 0);
+
+    // --- Side card content ---
+    if (hasSide) {
+        auto side = sideCard.reduced(12, 8);
+        side.removeFromTop(26 + 4 + 4);
+
+        if (showGrMeter || showVadMeter) {
+            auto meterArea = side.removeFromRight(24);
+            if (showGrMeter)  grMeter.setBounds(meterArea);
+            if (showVadMeter) vadMeter.setBounds(meterArea.withSizeKeepingCentre(24, juce::jmin(meterArea.getHeight(), 220)));
+            side.removeFromRight(8);
+        }
+
+        if (showDynamicsViz && dynamicsViz)
+            dynamicsViz->setBounds(side.withHeight(juce::jmin(side.getHeight(), side.getWidth())));
     }
 }
 

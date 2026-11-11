@@ -1,6 +1,22 @@
 #include "EffectChain.h"
+#include "EffectRegistry.h"
 
 namespace eeval {
+
+template <typename Setter>
+void EffectChain::measurePeaks(const juce::AudioBuffer<float>& buffer, Setter&& set)
+{
+    const int numCh = buffer.getNumChannels();
+    const int n = buffer.getNumSamples();
+    for (int ch = 0; ch < 2; ++ch) {
+        // Mono buffers feed both meters from channel 0.
+        const int src = juce::jmin(ch, numCh - 1);
+        float peak = 0.0f;
+        if (src >= 0 && n > 0)
+            peak = buffer.getMagnitude(src, 0, n);
+        set(ch, juce::Decibels::gainToDecibels(peak, -120.0f));
+    }
+}
 
 EffectChain::EffectChain() {
 }
@@ -20,8 +36,25 @@ void EffectChain::process(juce::AudioBuffer<float>& buffer) {
     // We use try_lock to avoid blocking the audio thread
     std::lock_guard<std::mutex> lock(slotMutex);
     for (auto& slot : slots) {
-        if (slot.module)
-            slot.module->process(buffer);
+        auto* m = slot.module.get();
+        if (m == nullptr)
+            continue;
+
+        if (m->isBypassed()) {
+            // Bypassed: signal passes untouched (no gain), meters show it as-is.
+            measurePeaks(buffer, [m](int ch, float db) { m->setMeterIn(ch, db); m->setMeterOut(ch, db); });
+            continue;
+        }
+
+        if (m->getSlotInGain() != 1.0f)
+            buffer.applyGain(m->getSlotInGain());
+        measurePeaks(buffer, [m](int ch, float db) { m->setMeterIn(ch, db); });
+
+        m->process(buffer);
+
+        if (m->getSlotOutGain() != 1.0f)
+            buffer.applyGain(m->getSlotOutGain());
+        measurePeaks(buffer, [m](int ch, float db) { m->setMeterOut(ch, db); });
     }
 }
 
@@ -35,9 +68,34 @@ void EffectChain::reset() {
 
 void EffectChain::updateParameters(juce::AudioProcessorValueTreeState& apvts) {
     std::lock_guard<std::mutex> lock(slotMutex);
-    for (auto& slot : slots) {
-        if (slot.module)
-            slot.module->updateParameters(apvts);
+
+    if (!gainParamsResolved) {
+        for (int i = 0; i < MAX_SLOTS; ++i) {
+            const auto sp = EffectRegistry::slotPrefix(i);
+            inGainParams[(size_t)i]  = apvts.getRawParameterValue(sp + ".inGain");
+            outGainParams[(size_t)i] = apvts.getRawParameterValue(sp + ".outGain");
+            bypassParams[(size_t)i]  = apvts.getRawParameterValue(sp + ".bypass");
+            mixParams[(size_t)i]     = apvts.getRawParameterValue(sp + ".mix");
+        }
+        gainParamsResolved = true;
+    }
+
+    for (int i = 0; i < MAX_SLOTS; ++i) {
+        auto& slot = slots[(size_t)i];
+        if (!slot.module)
+            continue;
+
+        slot.module->updateParameters(apvts);
+
+        if (const auto* bp = bypassParams[(size_t)i])
+            slot.module->setBypassed(bp->load() > 0.5f);
+        if (const auto* mx = mixParams[(size_t)i])
+            slot.module->setDryWetMix(mx->load() / 100.0f);
+
+        const auto* in  = inGainParams[(size_t)i];
+        const auto* out = outGainParams[(size_t)i];
+        slot.module->setSlotGains(in  ? juce::Decibels::decibelsToGain(in->load())  : 1.0f,
+                                  out ? juce::Decibels::decibelsToGain(out->load()) : 1.0f);
     }
 }
 
