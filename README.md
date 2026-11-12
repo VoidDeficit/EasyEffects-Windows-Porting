@@ -17,12 +17,6 @@ Get the latest version from the [Releases](../../releases/latest) page. Every re
 The files are not code-signed yet, so Windows SmartScreen may warn you the first time: choose
 **More info**, then **Run anyway**.
 
-## Tutorial video
-
-Shows an older version of the interface; the steps are the same.
-
-https://github.com/user-attachments/assets/d775c197-f497-41ad-902c-9434b1a11909
-
 ## Status: Alpha
 
 EasyEffects for Windows is under active development. The core works, but you may run into bugs, and
