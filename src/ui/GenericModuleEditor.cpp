@@ -204,7 +204,12 @@ void GenericModuleEditor::resized() {
     // Cards: "Controls" on the left, optional side card on the right
     const bool hasSide = showDynamicsViz || showVadMeter;
     if (hasSide) {
-        const int sideW = showDynamicsViz ? juce::jlimit(240, 420, area.getWidth() * 2 / 5) : 150;
+        int sideW = showDynamicsViz ? juce::jlimit(240, 420, area.getWidth() * 2 / 5) : 150;
+        // Keep the Controls card wide enough for label + slider + value box;
+        // at the default window size the side card would otherwise squeeze the
+        // sliders down to just their knobs.
+        constexpr int minControlsWidth = 420;
+        sideW = juce::jmax(160, juce::jmin(sideW, area.getWidth() - 12 - minControlsWidth));
         sideCard = area.removeFromRight(sideW);
         area.removeFromRight(12);
     } else {
@@ -217,10 +222,12 @@ void GenericModuleEditor::resized() {
     inner.removeFromTop(26 + 4);
     inner.removeFromTop(4);
 
-    auto placeRow = [&inner](juce::Component& label, juce::Component& control, int maxControlWidth) {
+    // Labels take up to 150 px, less when the card is narrow.
+    const int labelW = juce::jlimit(90, labelWidth, inner.getWidth() / 3);
+    auto placeRow = [&inner, labelW](juce::Component& label, juce::Component& control, int maxControlWidth) {
         auto row = inner.removeFromTop(rowHeight);
         inner.removeFromTop(rowGap);
-        label.setBounds(row.removeFromLeft(labelWidth));
+        label.setBounds(row.removeFromLeft(labelW));
         row.removeFromLeft(8);
         control.setBounds(maxControlWidth > 0 ? row.removeFromLeft(juce::jmin(row.getWidth(), maxControlWidth)) : row);
     };

@@ -60,6 +60,13 @@ int EasyEffectsAudioProcessor::addEffect(const std::string& typeId) {
                         typeParam->setValueNotifyingHost(typeParam->convertTo0to1((float)choiceIndex));
                 }
 
+                // A slot keeps its parameter values after an effect is removed
+                // or moved away, so a new effect would inherit them (often
+                // switched off). Start from the defaults, switched on.
+                resetEffect(i);
+                if (auto* bypass = parameters.getParameter(prefix + ".bypass"))
+                    bypass->setValueNotifyingHost(0.0f);
+
                 return i;
             }
             return -1;
@@ -447,5 +454,6 @@ void EasyEffectsAudioProcessor::resetEffect(int slotIndex) {
             ranged->setValueNotifyingHost(ranged->getDefaultValue());
     }
 
-    getPresetManager().markDirty();
+    if (presetManager != nullptr)   // not yet created while the constructor adds the default effects
+        presetManager->markDirty();
 }
