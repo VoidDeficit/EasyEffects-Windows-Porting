@@ -1,4 +1,5 @@
 #include "AsioHost.h"
+#include "WindowsAudioEndpoints.h"
 
 namespace eeval {
 
@@ -270,12 +271,24 @@ juce::String AsioHost::getWindowsInputName(int pipeline) const
     return (pipeline >= 0 && pipeline <= 1) ? windowsInputName[pipeline] : juce::String();
 }
 
+// Device row text: "Windows: <device>", "Windows: Default (<device>)", or
+// "... (waiting for device)" while the chosen device is not connected.
+static juce::String windowsDeviceLabel(const juce::String& chosen, const juce::String& actual, bool running)
+{
+    if (chosen.isEmpty())
+        return "Windows Audio (no device)";
+    if (chosen == AsioHost::defaultWindowsDevice)
+        return running && actual.isNotEmpty() ? "Windows: Default (" + actual + ")"
+                                              : juce::String("Windows: Default (waiting for a device)");
+    return running ? "Windows: " + chosen
+                   : "Windows: " + chosen + " (waiting for device)";
+}
+
 juce::String AsioHost::getSourceName(int pipeline) const
 {
     if (getInputSource(pipeline) == InputSource::WindowsAudio)
-        return windowsInputName[pipeline].isNotEmpty()
-                   ? "Windows: " + windowsInputName[pipeline]
-                   : juce::String("Windows Audio (no device)");
+        return windowsDeviceLabel(windowsInputName[pipeline], windowsInputActual[pipeline],
+                                  isWindowsInputRunning(pipeline));
 
     return getRouteName(pipeline, true);
 }
@@ -300,9 +313,8 @@ juce::String AsioHost::getWindowsOutputName(int pipeline) const
 juce::String AsioHost::getSinkName(int pipeline) const
 {
     if (getOutputTarget(pipeline) == OutputTarget::WindowsAudio)
-        return windowsOutputName[pipeline].isNotEmpty()
-                   ? "Windows: " + windowsOutputName[pipeline]
-                   : juce::String("Windows Audio (no device)");
+        return windowsDeviceLabel(windowsOutputName[pipeline], windowsOutputActual[pipeline],
+                                  isWindowsOutputRunning(pipeline));
 
     return getRouteName(pipeline, false);
 }
@@ -415,13 +427,24 @@ juce::String AsioHost::startWindowsInput(int pipeline, double sampleRate)
         return "No Windows Audio input device is selected for the "
              + juce::String(pipeline == inputPipeline ? "Input" : "Output") + " pipeline.";
 
+    // The chosen device (or the Windows default for "Default device"). If it
+    // is not connected right now, wait: checkWindowsDevices() starts it as
+    // soon as it shows up. That is not an error.
+    const auto deviceToOpen = resolveWindowsDevice(true, windowsInputName[pipeline]);
+    windowsInputActual[pipeline] = deviceToOpen;
+    if (deviceToOpen.isEmpty()) {
+        asioTrace("windows input for pipeline " + juce::String(pipeline) + ": waiting for \""
+                  + windowsInputName[pipeline] + "\"");
+        return {};
+    }
+
     if (sampleRate <= 0.0)
         sampleRate = 48000.0;
 
     if (windowsInput[pipeline] == nullptr)
         windowsInput[pipeline] = std::make_unique<WindowsAudioInput>();
 
-    const auto error = windowsInput[pipeline]->start(windowsInputName[pipeline], sampleRate);
+    const auto error = windowsInput[pipeline]->start(deviceToOpen, sampleRate);
     if (error.isNotEmpty()) {
         asioTrace("windows input for pipeline " + juce::String(pipeline) + " failed: " + error);
         stopWindowsInput(pipeline);
@@ -465,13 +488,24 @@ juce::String AsioHost::startWindowsOutput(int pipeline, double sampleRate)
         return "No Windows Audio output device is selected for the "
              + juce::String(pipeline == inputPipeline ? "Input" : "Output") + " pipeline.";
 
+    // The chosen device (or the Windows default for "Default device"). If it
+    // is not connected right now, wait: checkWindowsDevices() starts it as
+    // soon as it shows up. That is not an error.
+    const auto deviceToOpen = resolveWindowsDevice(false, windowsOutputName[pipeline]);
+    windowsOutputActual[pipeline] = deviceToOpen;
+    if (deviceToOpen.isEmpty()) {
+        asioTrace("windows output for pipeline " + juce::String(pipeline) + ": waiting for \""
+                  + windowsOutputName[pipeline] + "\"");
+        return {};
+    }
+
     if (sampleRate <= 0.0)
         sampleRate = 48000.0;
 
     if (windowsOutput[pipeline] == nullptr)
         windowsOutput[pipeline] = std::make_unique<WindowsAudioOutput>();
 
-    const auto error = windowsOutput[pipeline]->start(windowsOutputName[pipeline], sampleRate);
+    const auto error = windowsOutput[pipeline]->start(deviceToOpen, sampleRate);
     if (error.isNotEmpty()) {
         asioTrace("windows output for pipeline " + juce::String(pipeline) + " failed: " + error);
         stopWindowsOutput(pipeline);
@@ -644,6 +678,92 @@ void AsioHost::audioDeviceListChanged()
         open(driverName);
         reopening = false;
     });
+}
+
+} // namespace eeval
+
+// --- Windows Audio devices that come and go --------------------------------
+
+namespace eeval {
+
+juce::String AsioHost::resolveWindowsDevice(bool input, const juce::String& wanted) const
+{
+    const auto names = input ? WindowsAudioInput::getDeviceNames() : WindowsAudioOutput::getDeviceNames();
+
+    if (wanted != defaultWindowsDevice)
+        return names.contains(wanted) ? wanted : juce::String();   // empty = wait for it
+
+    // "Default device": the Windows default, but never EasyEffects' own (or
+    // any Synchronous Audio Router) endpoint - the Output pipeline would play
+    // into its own input, the mic into itself.
+    auto usable = [&names](const juce::String& n) {
+        return n.isNotEmpty() && names.contains(n)
+            && !n.containsIgnoreCase("EasyEffects")
+            && !n.containsIgnoreCase("Synchronous Audio Router");
+    };
+    const auto flow = input ? winaudio::Flow::Capture : winaudio::Flow::Render;
+
+    if (auto def = winaudio::getDefaultEndpoint(flow)) {
+        const auto n = juce::String::fromUTF8(def->name.c_str());
+        if (usable(n)) return n;
+    }
+
+    // Virtual Audio made EasyEffects' device the Windows default: use the
+    // default the user had before (remembered when Virtual Audio took over).
+    if (settings != nullptr) {
+        const auto previousId = settings->getValue(input ? "sar.prevCaptureId" : "sar.prevRenderId");
+        if (previousId.isNotEmpty())
+            for (const auto& ep : winaudio::listEndpoints(flow))
+                if (juce::String::fromUTF8(ep.id.c_str()) == previousId) {
+                    const auto n = juce::String::fromUTF8(ep.name.c_str());
+                    if (usable(n)) return n;
+                }
+    }
+
+    return {};   // wait
+}
+
+void AsioHost::checkWindowsDevices()
+{
+    if (device == nullptr)
+        return;
+
+    bool changed = false;
+    for (int p = 0; p < 2; ++p) {
+        // Output: start a device that was missing, or follow a new Windows default.
+        if (getOutputTarget(p) == OutputTarget::WindowsAudio && windowsOutputName[p].isNotEmpty()) {
+            const auto wanted = resolveWindowsDevice(false, windowsOutputName[p]);
+            const bool running = isWindowsOutputRunning(p) && windowsOutput[p]->isDelivering();
+            if (wanted.isEmpty() && running) {
+                // The device went away (unplugged, Bluetooth off): wait for it again.
+                asioTrace("windows output for pipeline " + juce::String(p) + ": device gone, waiting");
+                stopWindowsOutput(p);
+                windowsOutputActual[p].clear();
+                changed = true;
+            } else if (wanted.isNotEmpty() && (!running || wanted != windowsOutputActual[p])) {
+                asioTrace("windows output for pipeline " + juce::String(p) + ": starting \"" + wanted + "\"");
+                startWindowsOutput(p, getSampleRate());
+                changed = true;
+            }
+        }
+        if (getInputSource(p) == InputSource::WindowsAudio && windowsInputName[p].isNotEmpty()) {
+            const auto wanted = resolveWindowsDevice(true, windowsInputName[p]);
+            const bool running = isWindowsInputRunning(p) && windowsInput[p]->isDelivering();
+            if (wanted.isEmpty() && running) {
+                // The device went away (unplugged, Bluetooth off): wait for it again.
+                asioTrace("windows input for pipeline " + juce::String(p) + ": device gone, waiting");
+                stopWindowsInput(p);
+                windowsInputActual[p].clear();
+                changed = true;
+            } else if (wanted.isNotEmpty() && (!running || wanted != windowsInputActual[p])) {
+                asioTrace("windows input for pipeline " + juce::String(p) + ": starting \"" + wanted + "\"");
+                startWindowsInput(p, getSampleRate());
+                changed = true;
+            }
+        }
+    }
+    if (changed && onChange)
+        onChange();
 }
 
 } // namespace eeval

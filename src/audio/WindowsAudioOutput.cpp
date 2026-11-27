@@ -68,6 +68,7 @@ juce::String WindowsAudioOutput::start (const juce::String& deviceName, double s
     bridge.prepare (sampleRate, deviceRate > 0.0 ? deviceRate : sampleRate);
     currentName = deviceName;
 
+    lastCallbackMs.store (juce::Time::getMillisecondCounter());   // counts as alive until the first callback
     device->start (this);
     running.store (true);
     return {};
@@ -108,6 +109,8 @@ void WindowsAudioOutput::audioDeviceIOCallbackWithContext (const float* const*, 
                                                            int numSamples,
                                                            const juce::AudioIODeviceCallbackContext&)
 {
+    lastCallbackMs.store (juce::Time::getMillisecondCounter(), std::memory_order_relaxed);
+
     if (outputs == nullptr || numSamples <= 0)
         return;
 

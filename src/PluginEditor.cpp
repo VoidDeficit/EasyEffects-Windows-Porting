@@ -957,10 +957,26 @@ void EasyEffectsAudioProcessorEditor::showPairMenu(Pipeline p, bool inputSide, j
     const bool offerWindowsInput  = inputSide && pipe == eeval::AsioHost::inputPipeline;
     const bool offerWindowsOutput = !inputSide && pipe == eeval::AsioHost::outputPipeline;
 
-    const auto windowsInputs = offerWindowsInput ? asioHost->getWindowsInputNames()
-                                                 : juce::StringArray();
-    const auto windowsOutputs = offerWindowsOutput ? asioHost->getWindowsOutputNames()
+    // Windows Audio choices: "Default device" (follows Windows), the connected
+    // devices, and the chosen device even while it is not connected (it starts
+    // as soon as it shows up).
+    const juce::String defaultChoice = eeval::AsioHost::defaultWindowsDevice;
+    auto windowsChoices = [&defaultChoice](juce::StringArray connected, const juce::String& chosen) {
+        connected.insert(0, defaultChoice);
+        if (chosen.isNotEmpty() && !connected.contains(chosen))
+            connected.add(chosen);
+        return connected;
+    };
+    const auto connectedInputs  = offerWindowsInput  ? asioHost->getWindowsInputNames()  : juce::StringArray();
+    const auto connectedOutputs = offerWindowsOutput ? asioHost->getWindowsOutputNames() : juce::StringArray();
+    const auto windowsInputs  = offerWindowsInput  ? windowsChoices(connectedInputs,  asioHost->getWindowsInputName(pipe))
                                                    : juce::StringArray();
+    const auto windowsOutputs = offerWindowsOutput ? windowsChoices(connectedOutputs, asioHost->getWindowsOutputName(pipe))
+                                                   : juce::StringArray();
+    auto windowsLabel = [&defaultChoice](const juce::String& value, const juce::StringArray& connected) {
+        if (value == defaultChoice) return juce::String("Default device (follows Windows)");
+        return connected.contains(value) ? value : value + "  (not connected)";
+    };
 
     juce::PopupMenu menu;
     menu.addSectionHeader(juce::String(inputSide ? "Input" : "Output") + " channels - " + asioDriver);
@@ -973,20 +989,16 @@ void EasyEffectsAudioProcessorEditor::showPairMenu(Pipeline p, bool inputSide, j
     if (offerWindowsInput) {
         menu.addSeparator();
         menu.addSectionHeader("Windows Audio microphone");
-        if (windowsInputs.isEmpty())
-            menu.addItem(-1, "(no Windows Audio inputs found)", false, false);
         for (int i = 0; i < windowsInputs.size(); ++i)
-            menu.addItem(3000 + i, windowsInputs[i], true,
+            menu.addItem(3000 + i, windowsLabel(windowsInputs[i], connectedInputs), true,
                          windowsSource && windowsInputs[i] == asioHost->getWindowsInputName(pipe));
     }
 
     if (offerWindowsOutput) {
         menu.addSeparator();
         menu.addSectionHeader("Windows Audio output device");
-        if (windowsOutputs.isEmpty())
-            menu.addItem(-1, "(no Windows Audio outputs found)", false, false);
         for (int i = 0; i < windowsOutputs.size(); ++i)
-            menu.addItem(4000 + i, windowsOutputs[i], true,
+            menu.addItem(4000 + i, windowsLabel(windowsOutputs[i], connectedOutputs), true,
                          windowsSink && windowsOutputs[i] == asioHost->getWindowsOutputName(pipe));
     }
 
@@ -1220,6 +1232,14 @@ void EasyEffectsAudioProcessorEditor::timerCallback()
     if (outputPipeline != nullptr && ++saveCountdown >= 100) {
         saveCountdown = 0;
         outputPipeline->save();
+    }
+
+    // Every ~3 s: start Windows Audio devices that were not connected yet
+    // (e.g. headphones switched on) and follow the Windows default for
+    // pipelines set to "Default device".
+    if (asioEnabled() && ++deviceCheckCountdown >= 30) {
+        deviceCheckCountdown = 0;
+        asioHost->checkWindowsDevices();
     }
 
     if (isPipelinePage()) {

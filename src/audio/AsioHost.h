@@ -101,6 +101,15 @@ public:
     bool isWindowsInputRunning(int pipeline) const;
     bool isWindowsOutputRunning(int pipeline) const;
 
+    /** Name stored for "Default device": follows the Windows default. */
+    static constexpr const char* defaultWindowsDevice = "@default";
+
+    /** Starts Windows Audio devices that were missing (e.g. Bluetooth
+        headphones switched off) once they show up, and follows changes of the
+        Windows default for pipelines set to "Default device". Message thread;
+        call every few seconds. */
+    void checkWindowsDevices();
+
     /** Called on the message thread when channels / state change (repaint UI). */
     std::function<void()> onChange;
 
@@ -135,6 +144,13 @@ private:
     void stopWindowsOutput(int pipeline);
     void stopWindowsOutputs();
 
+    /** The device to open for a selection, or empty while it is not there.
+        "Default device" resolves to the Windows default, but never to an
+        EasyEffects / Synchronous Audio Router endpoint (that would feed
+        EasyEffects' own audio back into itself): while Virtual Audio is the
+        default, the user's previous default is used. */
+    juce::String resolveWindowsDevice(bool input, const juce::String& wanted) const;
+
     EasyEffectsAudioProcessor* procs[2];
     juce::PropertySet* settings;
 
@@ -148,6 +164,7 @@ private:
     std::atomic<int> outputTarget[2]; // OutputTarget, per pipeline
     juce::String windowsInputName[2];
     juce::String windowsOutputName[2];
+    juce::String windowsInputActual[2], windowsOutputActual[2];   // device really opened (empty while waiting)
     std::unique_ptr<WindowsAudioInput> windowsInput[2];
     std::unique_ptr<WindowsAudioOutput> windowsOutput[2];
     juce::AudioBuffer<float> work[2];

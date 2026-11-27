@@ -32,6 +32,13 @@ public:
     void stop();
 
     bool isRunning() const noexcept { return running.load(); }
+
+    /** Running and the device called back within the last 1.5 s (false once a
+        device disappeared, e.g. unplugged headphones). */
+    bool isDelivering() const noexcept {
+        return running.load()
+            && juce::Time::getMillisecondCounter() - lastCallbackMs.load() < 1500;
+    }
     juce::String getDeviceName() const { return currentName; }
 
     /** Buffered audio between ASIO and the device, in milliseconds. */
@@ -54,6 +61,7 @@ private:
 
     ClockBridge bridge;
     std::atomic<bool> running { false };
+    std::atomic<juce::uint32> lastCallbackMs { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WindowsAudioOutput)
 };

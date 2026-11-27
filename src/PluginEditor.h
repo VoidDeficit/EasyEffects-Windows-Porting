@@ -156,6 +156,7 @@ private:
     std::unique_ptr<eeval::AsioHost> asioHost;     // declared after the pipelines: destroyed first
     juce::String asioDriver;                       // non-empty = ASIO engine selected
     int saveCountdown = 0;
+    int deviceCheckCountdown = 0;
     juce::String themeFallback { "system" };       // used until the settings file is available
 
     eeval::theme::CustomLookAndFeel customTheme;
